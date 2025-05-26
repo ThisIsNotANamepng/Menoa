@@ -1,0 +1,52 @@
+# Linux Security Center
+
+I want to build a good AV for Linux, but it needs to follow some good design goals which follow Linux principles
+
+- Needs to get out of the way
+- Focus on intelligent, important features and minimal bloat
+- Scriptable
+
+To that end, I think it should have the following tools
+
+- ClamAV powered antivirus
+- Process scanning (ML with those datasets)
+    - Could learn based on the user’s behavior, alert when unusual behavior happens
+    - Could make our own damn dataset, UNSW-NB15 has ~920000 benign and ~110000 malicious traces
+        - We could have the cyber club attack a box
+            - Maybe even for malware night
+- Take a command and try to predict what will happen to the system
+    - Should do de-obsfucation
+    - Could take a bash script
+        - For example, when a software needs to be installed with a bash script the tool could scan it to find anything malicious
+- System Attestation, check binary file hashes against an api with known good hashes
+- Basic network analysis, search every foreign address the system connects to against a threat feed of bad ips/domains
+
+And also
+
+- Should also be options to turn any of the above tools on/off
+- Should be able to run and be useful without root
+
+Note: This is not a security scanner, it is not for finding all security flaws within a system. There are tools such as Lynis for that. This tool is only meant to include some features which detect continuous threats to a typical desktop system
+
+#### TODO:
+
+[ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
+[ ] You can only get the ip addresses of foreign connections, not domains. Some (I'm assuming) urls are on the threat feed but not the ip addresses of those domains, so they aren't detected. We need to resolve the domains on the list to ips or the ips on the system to domains. It would probably be easiest to do this on the doanload server for the threat feeds (I'm assuming there will be a server controlled by me for this)
+[ ] Should network monitoring include ipv6? Right now it doesn't
+
+#### Progress:
+
+[x] ClamAV functions
+[ ] Process scanning model
+[ ] Process continuous scanning
+[ ] System command testing
+[ ] Make a good de-obsfucator
+[x] Binary attestation client
+[ ] Binary attestation server
+[ ] Network monitoring
+
+[ ] Process scanning GUI
+[ ] ClamAV GUI
+[ ] Command testing GUI
+[ ] Binary attestation GUI
+[ ] Network monitoring GUI
