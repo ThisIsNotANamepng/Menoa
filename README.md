@@ -28,11 +28,28 @@ And also
 
 Note: This is not a security scanner, it is not for finding all security flaws within a system. There are tools such as Lynis for that. This tool is only meant to include some features which detect continuous threats to a typical desktop system
 
-#### TODO:
+## ClamAV Frontend
+
+### Updating signatures
+
+`freshclam` needs root to run, so unless we can get a window to open just to get root for that (which I can't figure out) I think the best option is to maintain our own feed which is downloaded and used instead of the clamav feed. I don't like it, but I think it's the only way. It can be stored on the central server, and be base don the actual clamav feed + yarify from abuse.ch
+
+Note: With `clamscan --version` you get smething like: ClamAV 1.4.2/27649/Mon May 26 03:31:06 2025, this is ClamAV Version/threat feed database version (increments by 1 every update)/Last time the database was updated on their end. If we could find where they say the current database version, we could check for out of date local version
+
+## Binary Attestation
+
+### Local database
+
+When you redraw the gui you don't want to re-check every binary against the api because the binaries are unlikely to have changed. It would be more efficient to cache a local database with all of the binaries that have been checked and the result of the check
+
+## TODO:
 
 [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
 [ ] You can only get the ip addresses of foreign connections, not domains. Some (I'm assuming) urls are on the threat feed but not the ip addresses of those domains, so they aren't detected. We need to resolve the domains on the list to ips or the ips on the system to domains. It would probably be easiest to do this on the doanload server for the threat feeds (I'm assuming there will be a server controlled by me for this)
 [ ] Should network monitoring include ipv6? Right now it doesn't
+[ ] I want the ClamAV scanning to run a different color circle as it loads the signatures
+[ ] When clamav scanning is running, the progress % text line should be in the middle of the circle
+[ ] When scanning a directory less than 1000 files the logic is wrong I think. When I scanned a smaller dir the circle didn't fill up all the way
 
 #### Progress:
 

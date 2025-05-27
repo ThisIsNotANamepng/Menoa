@@ -12,7 +12,6 @@ QListWidget::item:selected {
 }
 
 QLabel {
-    background-color: #FFFFFF;
     qproperty-alignment: AlignCenter;
 }
 
@@ -20,4 +19,45 @@ QPushButton {
     background-color: #2ABf9E;
     padding: 20px;
     font-size: 18px;
+}
+
+QGroupBox#clamGroupBox {
+    font: bold 16px;
+    color: darkred;
+    border: 2px solid gray;
+    border-radius: 5px;
+    margin-top: 1.5em;
+}
+
+QGroupBox#clamGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top center;
+    padding: 0 3px;
+    color: darkgreen;
+    font-weight: bold;
+}
+
+QLabel#clamAVDatabaseVersion {
+    color:#868686;
+    font-style: italic;
+    font-size: 14px;
+    width: 30%;
+}
+
+QLabel#clamAVLastScanned {
+    color: #868686;
+    font-style: italic;
+    font-size: 13px;
+    width: 30%;
+}
+
+QLabel#clamAVDatabaseVersion {
+    font-size: 14px;
+    qproperty-alignment: AlignRight;
+}
+
+QLabel#clamAVLastScanned {
+    font-size: 14px;
+    qproperty-alignment: AlignLeft;
+
 }

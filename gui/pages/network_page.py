@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox
 from PySide6.QtCore import QTimer
-from utils.network_tools import number_of_threats, get_interface_summary, get_realtime_logs, reload_endpoints
+
+from utils.network_utils import number_of_threats, get_interface_summary, get_realtime_logs, reload_endpoints
 
 class NetworkPage(QWidget):
     def __init__(self):
@@ -49,4 +50,3 @@ class NetworkPage(QWidget):
 
     def update_logs(self):
         self.log_box.setText(get_realtime_logs())
-        self.log_box.moveCursor(self.log_box.textCursor().End)  # scroll to bottom

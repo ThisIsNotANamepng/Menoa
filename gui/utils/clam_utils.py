@@ -2,17 +2,15 @@ import subprocess
 import shutil
 import os
 from typing import List, Tuple, Optional
-
+from datetime import datetime
 
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
     return shutil.which("clamscan") is not None
 
-
 def is_freshclam_available() -> bool:
     """Check if freshclam (database updater) is installed."""
     return shutil.which("freshclam") is not None
-
 
 def update_virus_database() -> Tuple[bool, str]:
     """Run freshclam to update the virus database."""
@@ -24,7 +22,6 @@ def update_virus_database() -> Tuple[bool, str]:
         return True, result.stdout
     except subprocess.CalledProcessError as e:
         return False, e.stdout + "\n" + e.stderr
-
 
 def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, str]]]:
     """
@@ -54,60 +51,28 @@ def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, 
     results = parse_clamscan_output(output)
     return True, results
 
-
-def parse_clamscan_output(output: str) -> List[Tuple[str, str]]:
-    """
-    Parses clamscan output and returns list of (file, result) tuples.
-    Example:
-        /path/to/file.txt: OK
-        /path/to/infected.exe: Eicar-Test-Signature FOUND
-    """
-    parsed_results = []
-    for line in output.strip().splitlines():
-        if not line or line.startswith("-----------") or line.startswith("SCAN SUMMARY"):
-            continue
-
-        if ": " in line:
-            path, result = line.rsplit(": ", 1)
-            parsed_results.append((path.strip(), result.strip()))
-    return parsed_results
-
-
-def get_scan_summary(results: List[Tuple[str, str]]) -> dict:
-    """Takes parsed results and returns a summary dict."""
-    summary = {
-        "scanned": len(results),
-        "infected": 0,
-        "clean": 0,
-        "errors": 0
-    }
-    for _, result in results:
-        if result == "OK":
-            summary["clean"] += 1
-        elif result.endswith("FOUND"):
-            summary["infected"] += 1
-        else:
-            summary["errors"] += 1
-    return summary
-
-
 def scan_path_streaming(path: str, recursive: bool = True):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) as they're found.
     """
     if not is_clamscan_available():
+        print("Clam error")
         yield ("ERROR", "clamscan not found in PATH.")
         return
 
     if not os.path.exists(path):
+        print("path error")
         yield ("ERROR", f"Path not found: {path}")
         return
 
     cmd = ["clamscan"]
+
     if recursive:
         cmd.append("-r")
     cmd.append(path)
+
+    print(path)
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -115,7 +80,6 @@ def scan_path_streaming(path: str, recursive: bool = True):
         if ": " in line:
             file, result = line.strip().rsplit(": ", 1)
             yield (file, result)
-
 
 def get_clamav_version() -> Optional[str]:
     """Return the version of clamscan if available."""
@@ -127,3 +91,43 @@ def get_clamav_version() -> Optional[str]:
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         return None
+
+def get_database_version():
+    # Returns the database patch version and when it was last changed
+
+    full = get_clamav_version().split("/")
+
+    return (full[1], full[2])
+
+def get_last_time_scanned():
+    # Returns the last time the system was scanned, found in /gui/data/last_scanned
+
+    last_scanned = ""
+
+    with open("data/last_scanned", "r") as file:
+        last_scanned = file.read()
+
+    return last_scanned
+
+def set_last_time_scanned():
+    # Updates the last time the system was scanned, found in /gui/data/last_scanned
+
+    with open("data/last_scanned", "w") as file:
+        file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
+
+def get_scan_total(path):
+    total = 0
+    try:
+        with os.scandir(path) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    total += 1
+                elif entry.is_dir(follow_symlinks=False):
+                    total += get_scan_total(entry.path)
+    except PermissionError:
+        pass  # Skip folders/files we can't access
+    return total
+    
+
+#for file, result in scan_path_streaming("/home/jack/Downloads"):
+#    print(file, result)
