@@ -1,11 +1,12 @@
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton
+from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem
 from pages.network_page import NetworkPage
 from pages.clam_page import ClamPage
+from pages.attestation_page import AttestationPage
+from pages.process_page import ProcessPage
 
-
-# Placeholder classes for other pages
+from pages.process_page import PredictionEngine
 
 class DashboardPage(QWidget):
     def __init__(self):
@@ -13,22 +14,6 @@ class DashboardPage(QWidget):
         layout = QVBoxLayout()
         layout.addWidget(QLabel("This is the dashboard, I want to have a few rows, one for each tool. Each one has a title and info on the left, and a check or red x on the right for the status of the thing"))
         layout.addWidget(QPushButton("Scan"))
-        self.setLayout(layout)
-
-class ProcessPage(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Process Page"))
-        layout.addWidget(QPushButton("Refresh"))
-        self.setLayout(layout)
-
-class AttestationPage(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Attestation Page"))
-        layout.addWidget(QPushButton("Verify"))
         self.setLayout(layout)
 
 class CommandPage(QWidget):
@@ -55,17 +40,19 @@ class MainWidget(QWidget):
 
         self.menu_widget.currentRowChanged.connect(self.display_page)
 
+        engine = PredictionEngine()
+
         self.stack = QStackedWidget()
         self.stack.addWidget(DashboardPage()) # index 0
         self.stack.addWidget(ClamPage()) # index 1
         self.stack.addWidget(NetworkPage()) # index 2
-        self.stack.addWidget(ProcessPage()) # index 3
+        self.stack.addWidget(ProcessPage(engine)) # index 3
         self.stack.addWidget(AttestationPage()) # index 4
         self.stack.addWidget(CommandPage()) # index 5
 
         layout = QHBoxLayout()
         layout.addWidget(self.menu_widget, 1)
-        layout.addWidget(self.stack, 4)
+        layout.addWidget(self.stack, 3)
 
         self.setLayout(layout)
 

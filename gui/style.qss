@@ -8,7 +8,7 @@ QListWidget::item {
 }
 
 QListWidget::item:selected {
-    background-color: #2ABf9E;
+    background-color: #2a6bbf;
 }
 
 QLabel {
@@ -16,7 +16,7 @@ QLabel {
 }
 
 QPushButton {
-    background-color: #2ABf9E;
+    background-color: #2a6bbf;
     padding: 20px;
     font-size: 18px;
 }
