@@ -42,6 +42,22 @@ Note: With `clamscan --version` you get smething like: ClamAV 1.4.2/27649/Mon Ma
 
 When you redraw the gui you don't want to re-check every binary against the api because the binaries are unlikely to have changed. It would be more efficient to cache a local database with all of the binaries that have been checked and the result of the check
 
+## To Install
+
+### Linux
+
+1. Make a new Python virtual environment (optional but highly encouraged): `python3 -m venv env` and activate `source env/bin/activate`
+
+2. Install Python requirments: `pip install -r requirements.txt`
+
+3. Install ClamAV: `sudo <package-manager> install clamav`
+
+4. Run `cd gui`, `python3 main.py`
+
+### Windows
+
+Switch to Linux
+
 ## TODO:
 
 [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
