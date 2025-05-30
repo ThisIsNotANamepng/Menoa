@@ -36,11 +36,17 @@ Note: This is not a security scanner, it is not for finding all security flaws w
 
 Note: With `clamscan --version` you get smething like: ClamAV 1.4.2/27649/Mon May 26 03:31:06 2025, this is ClamAV Version/threat feed database version (increments by 1 every update)/Last time the database was updated on their end. If we could find where they say the current database version, we could check for out of date local version
 
+## Network Monitoring
+
+## Process Classification
+
 ## Binary Attestation
 
 ### Local database
 
 When you redraw the gui you don't want to re-check every binary against the api because the binaries are unlikely to have changed. It would be more efficient to cache a local database with all of the binaries that have been checked and the result of the check
+
+## Command Parsing
 
 ## To Install
 
