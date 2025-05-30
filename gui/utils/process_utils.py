@@ -173,19 +173,13 @@ def predict(threshold: float):
         if pred_class == 1:
             predictions.append("Malicious")
             confidences.append(prob_malicious)
-            print(f"Process pid: {pids[i]} is malicious (confidence: {prob_malicious:.2f})")
 
             malicious_count += 1
         else:
             predictions.append("benign")
             confidences.append(prob_benign)
-            #print(f"Process {i} is benign (confidence: {1 - prob_malicious:.2f})")
+
             benign_count += 1
         
-
-        
-
-    print(f"Threshold: {threshold}, Malicious: {malicious_count}, Benign: {benign_count}, Total: {total}")
-
     return (pids, predictions, confidences)
 

@@ -1,7 +1,7 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog
 from PySide6.QtCore import Qt, QTimer, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
-import sys, time
+import sys, time, os
 
 from utils.clam_utils import get_scan_total, scan_path_streaming, get_last_time_scanned, get_database_version, set_last_time_scanned
 
@@ -12,15 +12,20 @@ class Scanner(QObject):
     finished = Signal()
     log = Signal(str)
 
+    def set_scan_path(self, path):
+        self.scan_path = path
+
     @Slot()
-    def scan(self, path="/home/jack/Downloads/yarafy_rules"):
+    def scan(self):
+
+        path = self.scan_path
 
         total_files = get_scan_total(path)
 
         print("Total files to scan: ", total_files)
 
         # The progress bar has a total of 1000, we need to know when to tick 1 for that 1000, that's the total number of files to scan / 1000
-        ## When the number to scan is les than 1000 it shits the bed
+        ## When the number to scan is less than 1000 it shits the bed
         tick_number = total_files // 1000 if total_files >= 1000 else 1
         scanned_files = 0
 
@@ -37,8 +42,11 @@ class Scanner(QObject):
 
             scanned_files+=1
 
-            if scanned_files % tick_number == 0:
+            if total_files >= 1000 and scanned_files % tick_number == 0: # IF there are more than 1000 files to scan we emit a tick progress every x files
                 ticked += 1
+                self.progress.emit(ticked)
+            elif tick_number == 1: # If there are less than 1000 files to scan we emit a tick progress x times for every file scanned
+                ticked += 1000 / total_files
                 self.progress.emit(ticked)
 
         self.finished.emit()
@@ -148,7 +156,7 @@ class ClamPage(QWidget):
         self.btn_box = QGroupBox()
         btn_layout = QHBoxLayout()
         # Button 1 starts filling
-        self.start_button = QPushButton("Start Progress")
+        self.start_button = QPushButton("Custom Scan")
         self.start_button.clicked.connect(self.start_fill)
         btn_layout.addWidget(self.start_button)
         # Buttons 2 & 3 external actions
@@ -176,6 +184,14 @@ class ClamPage(QWidget):
         self.thread = None
         self.worker = None        
 
+    def process_path(self, path):
+        if os.path.isdir(path):
+            print("Selected directory:", path)
+        elif os.path.isfile(path):
+            print("Selected file:", path)
+        else:
+            print("Unknown selection:", path)
+
     # Updates the log box
     @Slot(str)
     def append_log(self, text):
@@ -187,10 +203,27 @@ class ClamPage(QWidget):
         if self.thread and self.thread.isRunning():
             return
 
+
         # Setup worker
         self.worker = Scanner()
         self.thread = QThread()
         self.worker.moveToThread(self.thread)
+
+        # File choose dialogue
+        dialog = QFileDialog(self)
+        dialog.setWindowTitle("Select a Directory to Scan")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)  ## Right now it only takes directories, there's no supoorted way to make it take files or directories but there are supposedly hacky ways to get it to work https://stackoverflow.com/questions/27520304/qfiledialog-that-accepts-a-single-file-or-a-single-directory
+        #dialog.setOption(QFileDialog.Option.ShowDirsOnly, False)  # Show directories too
+        dialog.setViewMode(QFileDialog.ViewMode.List)
+
+        if dialog.exec():
+            selected_paths = dialog.selectedFiles()
+            if selected_paths:
+                path = selected_paths[0]
+                #self.path_label.setText(f"Selected: {path}")
+                self.process_path(path)
+                self.worker.set_scan_path(path)
+
 
         # Connect signals
         self.thread.started.connect(self.worker.scan)

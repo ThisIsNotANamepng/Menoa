@@ -1,29 +1,71 @@
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QStyle, QPushButton
+from PySide6.QtGui import QDesktopServices, QCursor
+from PySide6.QtCore import QUrl
+
 from pages.network_page import NetworkPage
 from pages.clam_page import ClamPage
 from pages.attestation_page import AttestationPage
-from pages.process_page import ProcessPage
-
-from pages.process_page import PredictionEngine
+from pages.process_page import ProcessPage, PredictionEngine
+from pages.script_page import ScriptPage
 
 class DashboardPage(QWidget):
     def __init__(self):
         super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("This is the dashboard, I want to have a few rows, one for each tool. Each one has a title and info on the left, and a check or red x on the right for the status of the thing"))
-        layout.addWidget(QPushButton("Scan"))
-        self.setLayout(layout)
+        main_layout = QVBoxLayout()
 
-class CommandPage(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Command Page"))
-        layout.addWidget(QPushButton("Execute"))
-        self.setLayout(layout)
+        tools = [
+            ("Clam", "Frontend for ClamAV, an open source malware scanner.", "ClamAV is an open-source antivirus engine for detecting trojans, viruses, malware, and other malicious threats.", "https://docs.example.com/clam"),
+            ("Network", "Checks network connections against a list of known bad endpoints.", "Compares all outgoing IP address requests against a compiled list of known malware hosts and botnets.", "https://docs.example.com/network"),
+            ("Process", "Classifies all current system processes as benign or malicious.", "Uses a machine learning model to check for malicious system processes using a homemade machine learning model.", "https://docs.example.com/process"),
+            ("Attestation", "Validates system binary integrity.", "Performs attestation checks using hashes of local binaries against a server with known good hashes of binaries to detect malicious tampering of local software.", "https://docs.example.com/attestation"),
+            ("Command", "Parses inputted Bash.", "Parses an inputted Bash script, predicting what effects will happen on the system if run.", "https://docs.example.com/command")
 
+        ]
+
+        for title, info, description, link in tools:
+            row_container = QWidget()
+            row_layout = QHBoxLayout()
+            row_layout.setAlignment(Qt.AlignLeft)
+
+            text_container = QWidget()
+            text_layout = QVBoxLayout()
+
+            lbl_title = QLabel(f"<b>{title}</b>")
+            lbl_info = QLabel(info)
+            lbl_description = QLabel(description)
+
+            lbl_link = QLabel(f'<a href="{link}">Learn more</a>')
+            lbl_link.setOpenExternalLinks(True)
+            lbl_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            lbl_link.setCursor(QCursor(Qt.PointingHandCursor))
+
+            for widget in [lbl_title, lbl_info, lbl_description, lbl_link]:
+                widget.setObjectName("dashboardLabel")
+                text_layout.addWidget(widget)
+
+            text_container.setLayout(text_layout)
+            row_layout.addWidget(text_container)
+
+            icon_label = QLabel()
+            if self.get_tool_status(title.lower()):
+                icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
+            else:
+                icon = self.style().standardIcon(QStyle.SP_DialogCancelButton)
+            pixmap = icon.pixmap(24, 24)
+            icon_label.setPixmap(pixmap)
+            row_layout.addWidget(icon_label, alignment=Qt.AlignVCenter)
+
+            row_container.setLayout(row_layout)
+            row_container.setObjectName("dashboardRow")
+            main_layout.addWidget(row_container)
+
+        self.setLayout(main_layout)
+
+    def get_tool_status(self, tool_name: str) -> bool:
+        # TODO: implement actual status checks
+        return False
 
 class MainWidget(QWidget):
     def __init__(self):
@@ -48,7 +90,7 @@ class MainWidget(QWidget):
         self.stack.addWidget(NetworkPage()) # index 2
         self.stack.addWidget(ProcessPage(engine)) # index 3
         self.stack.addWidget(AttestationPage()) # index 4
-        self.stack.addWidget(CommandPage()) # index 5
+        self.stack.addWidget(ScriptPage()) # index 5
 
         layout = QHBoxLayout()
         layout.addWidget(self.menu_widget, 1)

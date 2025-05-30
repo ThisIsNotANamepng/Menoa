@@ -59,5 +59,19 @@ QLabel#clamAVDatabaseVersion {
 QLabel#clamAVLastScanned {
     font-size: 14px;
     qproperty-alignment: AlignLeft;
+}
 
+#dashboardRow {
+    padding: 10px;
+    border-bottom: 1px solid #ccc;
+}
+
+#dashboardLabel {
+    font-size: 14px;
+    color: #ffffff;
+    qproperty-alignment: AlignLeft;
+}
+
+QLabel:hover {
+    color: #FFFFFF;
 }

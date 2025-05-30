@@ -29,8 +29,6 @@ class ThreatEndpoints:
 
 def number_of_threats():
     return(str(threat_endpoints.get_endpoint_count())+" threats tracked")
-    
-
 
 def get_interface_summary():
     return "Interface Summary:\n - eth0: UP\n - wlan0: DOWN"

@@ -2,16 +2,7 @@ import sys
 import time
 import psutil
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QDoubleSpinBox,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
- )
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem
 from PySide6.QtCore import QTimer, QObject
 
 from utils.process_utils import predict
@@ -20,10 +11,6 @@ from utils.process_utils import predict
 def get_model_version() -> str:
     ## Replace with actual version
     return "0.1.0"
-
-def external_info(pid: int) -> str:
-    # Placeholder: Return random string + pid
-    return f"info_{pid}"
 
 class PredictionEngine(QObject):
     def __init__(self):
@@ -41,7 +28,6 @@ class PredictionEngine(QObject):
             return self.data[1][self.data[0].index(pid)-1]
         else:
             return "Unscanned"
-
 
 class ProcessPage(QWidget):
     def __init__(self, engine):
@@ -103,9 +89,9 @@ class ProcessPage(QWidget):
         threshold = self.threshold_input.value()
         predict(threshold)
 
-        engine.scan()
+        self.engine.scan()
 
-    def populate_table(self, ):
+    def populate_table(self):
 
         engine = self.engine
 
