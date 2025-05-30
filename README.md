@@ -62,7 +62,9 @@ When you redraw the gui you don't want to re-check every binary against the api 
 
 ### Windows
 
-Switch to Linux
+1. Switch to Linux
+
+2. See the step for Linux installation
 
 ## TODO:
 
