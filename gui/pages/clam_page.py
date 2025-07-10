@@ -1,12 +1,17 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog
-from PySide6.QtCore import Qt, QTimer, QSize, QObject, Signal, Slot, QThread
+from PySide6.QtWidgets import (
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit,
+    QGroupBox, QApplication, QSizePolicy, QFileDialog
+)
+from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
-import sys, time, os
+import sys, os
 
-from utils.clam_utils import get_scan_total, scan_path_streaming, get_last_time_scanned, get_database_version, set_last_time_scanned
+from utils.clam_utils import (
+    get_scan_total, scan_path_streaming,
+    get_last_time_scanned, get_database_version,
+    set_last_time_scanned
+)
 
-
-# Class for interacting with scanning utilities
 class Scanner(QObject):
     progress = Signal(int)
     finished = Signal()
@@ -17,51 +22,21 @@ class Scanner(QObject):
 
     @Slot()
     def scan(self):
-
-        path = self.scan_path
-
-        total_files = get_scan_total(path)
-
-        print("Total files to scan: ", total_files)
-
-        # The progress bar has a total of 1000, we need to know when to tick 1 for that 1000, that's the total number of files to scan / 1000
-        ## When the number to scan is less than 1000 it shits the bed
+        total_files = get_scan_total(self.scan_path)
         tick_number = total_files // 1000 if total_files >= 1000 else 1
-        scanned_files = 0
+        scanned_files = ticked = 0
 
-        # How many times the progress bar has ticked forward
-        ticked = 0
-
-        # The string that is displayed in the log box on the bottom
-        logs = ""
-
-        for file, result in scan_path_streaming(path):
-            print(file, result)
-            logs = (file + " " + result)
-            self.log.emit(logs)
-
-            scanned_files+=1
-
-            if total_files >= 1000 and scanned_files % tick_number == 0: # IF there are more than 1000 files to scan we emit a tick progress every x files
+        for file, result in scan_path_streaming(self.scan_path):
+            self.log.emit(f"{file} {result}")
+            scanned_files += 1
+            if total_files >= 1000 and scanned_files % tick_number == 0:
                 ticked += 1
-                self.progress.emit(ticked)
-            elif tick_number == 1: # If there are less than 1000 files to scan we emit a tick progress x times for every file scanned
-                ticked += 1000 / total_files
-                self.progress.emit(ticked)
+            else:
+                ticked = min(ticked + (1000 / total_files), 1000)
+            self.progress.emit(int(ticked))
 
-        self.finished.emit()
         set_last_time_scanned()
-
-# External status function (unchanged)
-def external_update_status():
-    return ["Status line 1", "Status line 2", "Status line 3"]
-
-def external_update_progress():
-    # retained for any other updates
-    return 0
-
-def external_button_action(index):
-    print(f"Button {index} pressed")
+        self.finished.emit()
 
 class CircularProgress(QWidget):
     def __init__(self, parent=None, thickness=10):
@@ -73,8 +48,7 @@ class CircularProgress(QWidget):
         self.setMinimumSize(QSize(150, 150))
 
     def setRange(self, minimum, maximum):
-        self._min = minimum
-        self._max = maximum
+        self._min, self._max = minimum, maximum
         self.update()
 
     def setValue(self, val):
@@ -83,28 +57,25 @@ class CircularProgress(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(self._thickness, self._thickness,
                                      -self._thickness, -self._thickness)
         start_angle = 90 * 16
         span_angle = -int(360 * 16 * (self._value - self._min) / (self._max - self._min))
 
-        # Background circle
-        pen_bg = QPen(QColor(200, 200, 200), self._thickness)
+        pen_bg = QPen(QColor(200,200,200), self._thickness)
         painter.setPen(pen_bg)
         painter.drawEllipse(rect)
 
-        # Progress arc
-        pen_fg = QPen(QColor(100, 150, 250), self._thickness)
+        pen_fg = QPen(QColor(100,150,250), self._thickness)
         painter.setPen(pen_fg)
         painter.drawArc(rect, start_angle, span_angle)
-        
-        # If complete, draw check
+
         if self._value >= self._max:
-            pen_check = QPen(QColor(0, 180, 0), self._thickness)
-            pen_check.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen_check = QPen(QColor(0,180,0), self._thickness)
+            pen_check.setCapStyle(Qt.RoundCap)
             painter.setPen(pen_check)
-            w, h = self.width(), self.height()
+            w,h = self.width(), self.height()
             painter.drawLine(w*0.3, h*0.5, w*0.45, h*0.7)
             painter.drawLine(w*0.45, h*0.7, w*0.75, h*0.3)
         painter.end()
@@ -112,133 +83,125 @@ class CircularProgress(QWidget):
 class ClamPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Circular Progress Window")
+        self.setWindowTitle("ClamAV Scanner")
+        self._setup_ui()
+        self._load_db_info()
 
-        # --- Top Group Box ---
-        self.top_box = QGroupBox("ClamAV Antivirus")
-        self.top_box.setObjectName("clamGroupBox")
+        # Paths for quick scan
+        self._quick_paths = [
+            os.path.expanduser("~/Downloads"),
+            os.path.expanduser("~/Documents")
+        ]
+        self._quick_index = 0
+
+    def _setup_ui(self):
+        # Progress circle
         self.circular = CircularProgress(thickness=12)
         self.circular.setRange(0, 1000)
+        top = QGroupBox("ClamAV Antivirus")
+        hl = QHBoxLayout()
+        hl.addStretch()
+        hl.addWidget(self.circular, alignment=Qt.AlignCenter)
+        hl.addStretch()
+        top.setLayout(hl)
 
-        top_layout = QHBoxLayout()
-        top_layout.addStretch(1)
-        top_layout.addWidget(self.circular, 0, Qt.AlignmentFlag.AlignCenter)
-        top_layout.addStretch(1)
-        self.top_box.setLayout(top_layout)
+        # Status labels
+        self.status1 = QLabel()
+        self.status2 = QLabel()
+        for lbl in (self.status1, self.status2):
+            lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        mid = QGroupBox()
+        ml = QHBoxLayout()
+        ml.addWidget(self.status1)
+        ml.addWidget(self.status2)
+        mid.setLayout(ml)
 
+        # Buttons
+        btns = QGroupBox()
+        bl = QHBoxLayout()
+        b1 = QPushButton("Quick Scan");   b1.clicked.connect(self.quick_scan)
+        b2 = QPushButton("Scan Folder");  b2.clicked.connect(self.scan_folder)
+        b3 = QPushButton("Scan File");    b3.clicked.connect(self.scan_file)
+        b4 = QPushButton("Full Scan");    b4.clicked.connect(self.full_scan)
+        for b in (b1, b2, b3, b4):
+            bl.addWidget(b)
+        btns.setLayout(bl)
 
-        # --- Status Group Box ---
-        self.mid_box = QGroupBox()
-        #status_layout = QVBoxLayout()
-        status_layout = QHBoxLayout()
-        self.status_labels = [QLabel() for _ in range(3)]
+        # Log
+        self.log_box = QTextEdit(readOnly=True)
 
-        for lbl in self.status_labels:
-            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            status_layout.addWidget(lbl)
-        self.mid_box.setLayout(status_layout)
+        # Layout
+        mlayout = QVBoxLayout(self)
+        mlayout.setContentsMargins(20,20,20,20)
+        mlayout.setSpacing(10)
+        mlayout.addWidget(top,    stretch=3)
+        mlayout.addWidget(mid,    stretch=1)
+        mlayout.addWidget(btns,   stretch=1)
+        mlayout.addWidget(self.log_box, stretch=6)
 
-        for i in range(2):
-            self.status_labels[i].setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            self.status_labels[i].setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            status_layout.addWidget(self.status_labels[i])
+    def _load_db_info(self):
+        ver, changed = get_database_version()
+        self.status1.setText(f"DB Patch: {ver}, Last changed: {changed}")
+        self.status2.setText(f"Last scan: {get_last_time_scanned()}")
 
-        #self.status_labels[0].setText(f"Progress: {v}%")
-        version = get_database_version()
-        self.status_labels[0].setText(f"Patch: {version[0]}, Last changed: {version[1]}")
-        self.status_labels[0].setObjectName("clamAVDatabaseVersion")
-
-        self.status_labels[1].setText(f"Last scan: {get_last_time_scanned()}")
-        self.status_labels[1].setObjectName("clamAVLastScanned")
-
-
-        # --- Buttons Box ---
-        self.btn_box = QGroupBox()
-        btn_layout = QHBoxLayout()
-        # Button 1 starts filling
-        self.start_button = QPushButton("Custom Scan")
-        self.start_button.clicked.connect(self.start_fill)
-        btn_layout.addWidget(self.start_button)
-        # Buttons 2 & 3 external actions
-        for i, text in enumerate(["Action 2", "Action 3"], start=2):
-            btn = QPushButton(text)
-            btn.clicked.connect(lambda _, x=i: external_button_action(x))
-            btn_layout.addWidget(btn)
-        self.btn_box.setLayout(btn_layout)
-
-        # --- Log Box ---
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-
-        # --- Main Layout ---
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
-
-        main_layout.addWidget(self.top_box, stretch=3)
-        main_layout.addWidget(self.mid_box, stretch=1)
-        main_layout.addWidget(self.btn_box, stretch=1)
-        main_layout.addWidget(self.log_box, stretch=6)
-
-        # Placeholder for worker/thread
-        self.thread = None
-        self.worker = None        
-
-    def process_path(self, path):
-        if os.path.isdir(path):
-            print("Selected directory:", path)
-        elif os.path.isfile(path):
-            print("Selected file:", path)
-        else:
-            print("Unknown selection:", path)
-
-    # Updates the log box
-    @Slot(str)
-    def append_log(self, text):
-        self.log_box.insertPlainText(text + "\n")
-        self.log_box.verticalScrollBar().setValue(self.log_box.verticalScrollBar().maximum())
-
-    def start_fill(self):
-        # Prevent multiple threads
-        if self.thread and self.thread.isRunning():
+    def _start_scan(self, path):
+        """Helper to wire up a Scanner worker for a single path."""
+        if getattr(self, 'scan_thread', None) and self.scan_thread.isRunning():
             return
 
+        self.log_box.append(f"Starting scan: {path}")
+        self.scan_worker = Scanner()
+        self.scan_worker.set_scan_path(path)
 
-        # Setup worker
-        self.worker = Scanner()
-        self.thread = QThread()
-        self.worker.moveToThread(self.thread)
+        self.scan_thread = QThread()
+        self.scan_worker.moveToThread(self.scan_thread)
+        self.scan_thread.started.connect(self.scan_worker.scan)
 
-        # File choose dialogue
-        dialog = QFileDialog(self)
-        dialog.setWindowTitle("Select a Directory to Scan")
-        dialog.setFileMode(QFileDialog.FileMode.Directory)  ## Right now it only takes directories, there's no supoorted way to make it take files or directories but there are supposedly hacky ways to get it to work https://stackoverflow.com/questions/27520304/qfiledialog-that-accepts-a-single-file-or-a-single-directory
-        #dialog.setOption(QFileDialog.Option.ShowDirsOnly, False)  # Show directories too
-        dialog.setViewMode(QFileDialog.ViewMode.List)
+        self.scan_worker.progress.connect(self.circular.setValue)
+        self.scan_worker.progress.connect(lambda v: self.status1.setText(f"Progress: {v}/1000"))
+        self.scan_worker.log.connect(self.log_box.append)
 
-        if dialog.exec():
-            selected_paths = dialog.selectedFiles()
-            if selected_paths:
-                path = selected_paths[0]
-                #self.path_label.setText(f"Selected: {path}")
-                self.process_path(path)
-                self.worker.set_scan_path(path)
+        self.scan_worker.finished.connect(self.scan_thread.quit)
+        self.scan_worker.finished.connect(self._load_db_info)
+        self.scan_worker.finished.connect(lambda: self.status1.setText("Completed!"))
+        self.scan_worker.finished.connect(lambda: self.status2.setText(f"Last scan: {get_last_time_scanned()}"))
+        self.scan_worker.finished.connect(self._maybe_continue_quick)
 
+        self.scan_thread.start()
 
-        # Connect signals
-        self.thread.started.connect(self.worker.scan)
-        self.worker.progress.connect(self.circular.setValue)
-        self.worker.progress.connect(lambda v: self.status_labels[0].setText(f"Progress: {v}%"))
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.finished.connect(lambda: self.status_labels[0].setText("Completed!"))
-        self.worker.finished.connect(lambda: self.status_labels[1].setText(f"Last scan: {get_last_time_scanned()}"))
+    def _maybe_continue_quick(self):
+        """If Quick Scan still has more paths, scan next."""
+        if self._quick_index < len(self._quick_paths) - 1:
+            self._quick_index += 1
+            next_path = self._quick_paths[self._quick_index]
+            self._start_scan(next_path)
+        else:
+            self._quick_index = 0
 
-        version = get_database_version()
-        self.worker.finished.connect(lambda: self.status_labels[0].setText(f"Patch: {version[0]}, Last changed: {version[1]}"))
+    @Slot()
+    def quick_scan(self):
+        self._quick_index = 0
+        self._start_scan(self._quick_paths[0])
 
-        # Connect log box
-        self.log_box.insertPlainText("Loading signatures...")
-        self.worker.log.connect(self.append_log)
+    @Slot()
+    def scan_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
+        if folder:
+            self._start_scan(folder)
 
-        # Start
-        self.thread.start()
+    @Slot()
+    def scan_file(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Select File to Scan")
+        if file:
+            self._start_scan(file)
+
+    @Slot()
+    def full_scan(self):
+        self._start_scan("/")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    win = ClamPage()
+    win.resize(600, 600)
+    win.show()
+    sys.exit(app.exec())

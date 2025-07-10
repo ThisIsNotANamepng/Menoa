@@ -21,7 +21,6 @@ class DashboardPage(QWidget):
             ("Process", "Classifies all current system processes as benign or malicious.", "Uses a machine learning model to check for malicious system processes using a homemade machine learning model.", "https://docs.example.com/process"),
             ("Attestation", "Validates system binary integrity.", "Performs attestation checks using hashes of local binaries against a server with known good hashes of binaries to detect malicious tampering of local software.", "https://docs.example.com/attestation"),
             ("Command", "Parses inputted Bash.", "Parses an inputted Bash script, predicting what effects will happen on the system if run.", "https://docs.example.com/command")
-
         ]
 
         for title, info, description, link in tools:

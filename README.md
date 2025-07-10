@@ -68,26 +68,26 @@ When you redraw the gui you don't want to re-check every binary against the api 
 
 ## TODO:
 
-[ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
-[ ] You can only get the ip addresses of foreign connections, not domains. Some (I'm assuming) urls are on the threat feed but not the ip addresses of those domains, so they aren't detected. We need to resolve the domains on the list to ips or the ips on the system to domains. It would probably be easiest to do this on the doanload server for the threat feeds (I'm assuming there will be a server controlled by me for this)
-[ ] Should network monitoring include ipv6? Right now it doesn't
-[ ] I want the ClamAV scanning to run a different color circle as it loads the signatures
-[ ] When clamav scanning is running, the progress % text line should be in the middle of the circle
-[ ] When scanning a directory less than 1000 files the logic is wrong I think. When I scanned a smaller dir the circle didn't fill up all the way
+- [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
+- [ ] You can only get the ip addresses of foreign connections, not domains. Some (I'm assuming) urls are on the threat feed but not the ip addresses of those domains, so they aren't detected. We need to resolve the domains on the list to ips or the ips on the system to domains. It would probably be easiest to do this on the doanload server for the threat feeds (I'm assuming there will be a server controlled by me for this)
+- [ ] Should network monitoring include ipv6? Right now it doesn't
+- [ ] I want the ClamAV scanning to run a different color circle as it loads the signatures
+- [ ] When clamav scanning is running, the progress % text line should be in the middle of the circle
+- [ ] When scanning a directory less than 1000 files the logic is wrong I think. When I scanned a smaller dir the circle didn't fill up all the way
 
 #### Progress:
 
-[x] ClamAV functions
-[ ] Process scanning model
-[ ] Process continuous scanning
-[ ] System command testing
-[ ] Make a good de-obsfucator
-[x] Binary attestation client
-[ ] Binary attestation server
-[ ] Network monitoring
+- [x] ClamAV functions
+- [ ] Process scanning model
+- [ ] Process continuous scanning
+- [ ] System command testing
+- [ ] Make a good de-obsfucator
+- [x] Binary attestation client
+- [ ] Binary attestation server
+- [ ] Network monitoring
 
-[ ] Process scanning GUI
-[ ] ClamAV GUI
-[ ] Command testing GUI
-[ ] Binary attestation GUI
-[ ] Network monitoring GUI
+- [ ] Process scanning GUI
+- [ ] ClamAV GUI
+- [ ] Command testing GUI
+- [ ] Binary attestation GUI
+- [ ] Network monitoring GUI
