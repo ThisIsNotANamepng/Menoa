@@ -6,7 +6,6 @@ import psutil
 import os
 import time
 
-
 def get_tslpi(pid):
     tslpi = 0
     task_dir = f'/proc/{pid}/task'
@@ -82,7 +81,6 @@ def get_trun(pid):
 
     return trun
 
-
 def predict(threshold: float):
 
     # Load the trained model
@@ -121,7 +119,6 @@ def predict(threshold: float):
             # TRUN
             trun = get_trun(pid)
 
-            
             processes.append({
                 'TRUN': trun,
                 'TSLPI': tslpi,
@@ -182,4 +179,3 @@ def predict(threshold: float):
             benign_count += 1
         
     return (pids, predictions, confidences)
-

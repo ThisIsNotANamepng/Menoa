@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox
 from PySide6.QtCore import QTimer, Qt
 
-from utils.script_utils import parse_script, predict_actions, load_script_template
+#from utils.script_utils import parse_script, predict_actions, load_script_template
 
 class ScriptPage(QWidget):
     def __init__(self):

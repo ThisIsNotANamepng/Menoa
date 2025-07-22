@@ -6,10 +6,11 @@ TODO:
     - Need to fetch the list from a server to refresh feed
     - Need to add ability to add custom threat feeds
     - Need a clock to actually check the connections for threats
-    - The conn display list is updated with check(), when there's a clock for running clock() it will be running twice haphazardly
+    - The conn display list is updated with connections_check(), when there's a clock for running clock() it will be running twice haphazardly
 """
 
 import psutil, csv, time
+from utils.utils import alert
 
 class ThreatEndpoints:
     def __init__(self):
@@ -34,8 +35,7 @@ def get_interface_summary():
     return "Interface Summary:\n - eth0: UP\n - wlan0: DOWN"
 
 def get_realtime_logs():
-    return (check())
-
+    return (connections_check())
 
 def reload_endpoints():
     # Reloads the enpoints by reading the csv file again
@@ -66,7 +66,7 @@ def reload_endpoints():
 
     return threat_endpoints
 
-def check():
+def connections_check(verbose=True, desktop_notification=False):
 
     connections = psutil.net_connections(kind="inet")
     endpoints = threat_endpoints.get_endpoints()
@@ -79,22 +79,29 @@ def check():
 
         if conn.raddr and conn.raddr.ip in endpoints:
             pid = conn.pid
-            print(f"Match found: Remote IP {conn.raddr.ip}:{conn.raddr.port}")
-            print(f"Local Address: {conn.laddr.ip}:{conn.laddr.port}")
-            print(f"Status: {conn.status}")
+
+            if verbose:
+                print(f"Match found: Remote IP {conn.raddr.ip}:{conn.raddr.port}")
+                print(f"Local Address: {conn.laddr.ip}:{conn.laddr.port}")
+                print(f"Status: {conn.status}")
             if pid:
                 try:
                     proc = psutil.Process(pid)
-                    print(f"PID: {pid}")
-                    print(f"Command: {' '.join(proc.cmdline())}")
-                    print(f"Executable: {proc.exe()}")
-                    print(f"Username: {proc.username()}")
+                    if verbose:
+                        print(f"PID: {pid}")
+                        print(f"Command: {' '.join(proc.cmdline())}")
+                        print(f"Executable: {proc.exe()}")
+                        print(f"Username: {proc.username()}")
                 except psutil.NoSuchProcess:
-                    print(f"Process {pid} no longer exists.")
+                    if verbose:
+                        print(f"Process {pid} no longer exists.")
             else:
-                print("No PID associated with this connection.")
-            print("-" * 60)
+                if verbose:
+                    print("No PID associated with this connection.")
+            if verbose: print("-" * 60)
 
+            if desktop_notification: alert("Malicious endpoint detected", pid)
+        
         
         if conn.raddr: display_conn_list += f"{conn.pid}: {conn.raddr.ip}:{conn.raddr.port}\n"
 
