@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
 """
 CLI interface for Menoa
 """
+
 import sys
 import click
 from rich.console import Console
@@ -10,11 +10,11 @@ from tqdm import tqdm
 from rich.table import Table
 from rich import box
 
-import utils.attestation_utils as attestation_utils
-import utils.clam_utils as clam_utils
-import utils.network_utils as network_utils
-import utils.process_utils as process_utils
-import utils.script_utils as script_utils
+#import utils.attestation_utils as attestation_utils
+#import utils.clam_utils as clam_utils
+#import utils.network_utils as network_utils
+#import utils.process_utils as process_utils
+#import utils.script_utils as script_utils
 
 console = Console()
 
@@ -75,6 +75,8 @@ def clam_quick_scan():
     """
     Scans places in which malware is most often found (~/Downloads)
     """
+    import utils.clam_utils as clam_utils
+
     console.print("[blue]Starting quick scan[/blue]")
     scan(str(Path.home()) + "/Downloads/")
 
@@ -83,6 +85,8 @@ def clam_full_scan():
     """
     Scans the whole system from /
     """
+    import utils.clam_utils as clam_utils
+
     console.print("[blue]Starting full system scan from /[/blue]")
     scan("/")
 
@@ -93,6 +97,8 @@ def clam_custom_scan(path):
     """
     Perform a custom Clam scan using a given file/dir path
     """
+    import utils.clam_utils as clam_utils
+
     console.print(f"[blue]Starting scan from: {path}[/blue]")
     scan(path)
 
@@ -102,6 +108,8 @@ def clam_reload_feed(feed=False):
     """
     Reload Clam feed from source. If a name or a url is passed then just reload that feed, else reload all
     """
+    import utils.clam_utils as clam_utils
+
     if feed:
         console.print("[yellow]Reloading feed...[/yellow]")
         clam_utils.update_feed(feed)
@@ -123,6 +131,8 @@ def clam_add_feed(index, name, url, description, local_path, supports_versioning
     """
     Add a new Clam feed.
     """
+    import utils.clam_utils as clam_utils
+
     clam_utils.add_feed(index, name, url, description, local_path, supports_versioning, centralize)
     console.print(f"[green]Added {name}![/green]")
 
@@ -132,6 +142,8 @@ def clam_remove_feed(index):
     """
     Remove an existing Clam feed
     """
+    import utils.clam_utils as clam_utils
+
     clam_utils.remove_feed(index)
     console.print(f"[green]{index} removed![/green]")
 
@@ -140,6 +152,8 @@ def clam_list_feeds():
     """
     Print a table of the current Clam feeds
     """
+    import utils.clam_utils as clam_utils
+
     table = Table(title="ClamAV Signature Feeds", box=box.ROUNDED)
 
     table.add_column("Index", justify="right", style="cyan", no_wrap=True)
@@ -165,6 +179,8 @@ def clam_set_delay(scan, refresh, seconds=False):
     """
     Set/get scan delay (in seconds) for Clam. If no delay is passed, prints the delay and exits
     """
+    import utils.clam_utils as clam_utils
+
     if not seconds and refresh:
         console.print(f"[green]Feed refresh delay: {clam_utils.get_delay()["feed_update_delay"]}[/green]")
     elif not seconds and not refresh:
@@ -183,6 +199,8 @@ def clam_toggle_background(on, off):
     """
     Toggle Clam background scanning on/off
     """
+    import utils.clam_utils as clam_utils
+
     if on:
         clam_utils.toggle(True)
         console.print("[green]Background scan toggled on[/green]")
@@ -203,6 +221,8 @@ def network_scan():
     """
     Perform a network scan
     """
+    import utils.network_utils as network_utils
+
     console.print("[yellow]Starting network scan...[/yellow]")
     # Implementation
     console.print("[green]Network scan completed.[/green]")
@@ -212,6 +232,8 @@ def network_reload_feed():
     """
     Reload network feed(s) from source
     """
+    import utils.network_utils as network_utils
+    
     console.print("[yellow]Reloading network feed...[/yellow]")
     # Implementation
     console.print("[green]Network feed reloaded.[/green]")
@@ -222,6 +244,8 @@ def network_add_feed(url):
     """
     Add a new network feed from a local file or remote url
     """
+    import utils.network_utils as network_utils
+    
     console.print(f"[yellow]Adding network feed: {url}...[/yellow]")
     # Implementation
     console.print("[green]Network feed added.[/green]")
@@ -232,6 +256,8 @@ def network_remove_feed(url):
     """
     Remove an existing network feed
     """
+    import utils.network_utils as network_utils
+    
     console.print(f"[yellow]Removing network feed: {url}...[/yellow]")
     # Implementation
     console.print("[green]Network feed removed.[/green]")
@@ -241,6 +267,8 @@ def network_list_feeds():
     """
     Show current network feeds.
     """
+    import utils.network_utils as network_utils
+    
     console.print("[yellow]Fetching network feeds...[/yellow]")
     # Implementation
     console.print("[green]Showing feeds[/green]")
@@ -251,6 +279,8 @@ def network_set_delay(seconds=False):
     """
     Set/get network scan delay (in seconds). If no delay is passed, prints the delay and exits
     """
+    import utils.network_utils as network_utils
+    
     if not seconds:
         console.print("[green]Delay: [/green]")
     else:
@@ -260,6 +290,8 @@ def network_set_delay(seconds=False):
 @network.command(name="on")
 def network_toggle_background_on():
     """
+    import utils.network_utils as network_utils
+    
     Toggle network background scanning on
     """
     console.print("[yellow]Toggling network background scan on...[/yellow]")
@@ -271,6 +303,8 @@ def network_toggle_background_off():
     """
     Toggle network background scanning off
     """
+    import utils.network_utils as network_utils
+    
     console.print("[yellow]Toggling network background scan off...[/yellow]")
     # Implementation
     console.print("[green]Background scan toggled off[/green]")
@@ -280,6 +314,8 @@ def network_toggle_background():
     """
     Toggle network background scanning
     """
+    import utils.network_utils as network_utils
+    
     console.print("[yellow]Toggling network background scan...[/yellow]")
     # Implementation
     console.print("[green]Background scan toggled[/green]")
@@ -288,6 +324,7 @@ def network_toggle_background():
 @cli.group()
 def process():
     """Process scanning related commands"""
+    import utils.process_utils as process_utils
     pass
 
 @process.command(name="scan")
