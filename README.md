@@ -72,6 +72,26 @@ When you redraw the gui you don't want to re-check every binary against the api 
 
 The datasets and configs will be kept in `~/.menoa`
 
+#### Custom feeds
+
+Menoa allows you to add your own custom feeds for malware scanning signatures and ip address endpoints
+
+This is an example feed (a default one packaged with Menoa)
+
+    [clam_feeds.default_daily]
+    url = "menoa.org/feed.default"              # Upstream url to re-download from. If the feed is a one-time, non-updating dataset just set this to the same as `local_path`
+    name = "Default daily.cld ClamAV feed"      # Name of the feed
+    description = "Daily bundled with ClamAV"   # One line description of the feed
+    local_path = ~/.menoa/feeds/daily.cld       # The local path to the current feed dataset on the system (must be read available to the user running Menoa)
+    last_refreshed = 1970-01-01T00:00:00        # The last time the dataset was re-downloaded from `url`
+    upstream_supports_versioning = True         # Whether or not the upstream download `url` supports versioning, allowing to download the changes to a feed dataset instead of redownloadig the entire dataset every time it's redownloaded. See 'Upstream Versioning' for more information
+
+### Upstream Versioning
+
+Feeds may have upstream_supports_versioning set to True which means that the server or location which hosts the upstream feed dataset can take the version that the local dataset is at, allowing it to just reply with the changes made since the given version, saving network costs
+
+#TODO Add technical details here
+
 ## TODO:
 
 - [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
@@ -82,6 +102,8 @@ The datasets and configs will be kept in `~/.menoa`
 - [ ] When scanning a directory less than 1000 files the logic is wrong I think. When I scanned a smaller dir the circle didn't fill up all the way
 - [ ] Right now ClamAV just uses the official source but you can load your own yara rules, we could make our own threat feed for yara rules combining other sources
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
+- [ ] Add ability to scan with clam using a specified feed (cli and gui)
+- [ ] Should you be able to determine how often a feed should update in the config?
 
 #### Progress:
 

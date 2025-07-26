@@ -107,4 +107,4 @@ def connections_check(verbose=True, desktop_notification=False):
 
     return display_conn_list
 
-threat_endpoints = ThreatEndpoints()
+#threat_endpoints = ThreatEndpoints()

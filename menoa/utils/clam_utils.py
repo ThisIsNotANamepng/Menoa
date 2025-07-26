@@ -3,6 +3,11 @@ import shutil
 import os
 from typing import List, Tuple, Optional
 from datetime import datetime
+import tomli, tomli_w
+from pathlib import Path
+import requests
+
+import utils
 
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
@@ -11,17 +16,6 @@ def is_clamscan_available() -> bool:
 def is_freshclam_available() -> bool:
     """Check if freshclam (database updater) is installed."""
     return shutil.which("freshclam") is not None
-
-def update_virus_database() -> Tuple[bool, str]:
-    """Run freshclam to update the virus database."""
-    if not is_freshclam_available():
-        return False, "freshclam not found in PATH."
-
-    try:
-        result = subprocess.run(["sudo", "freshclam"], capture_output=True, text=True, check=True)
-        return True, result.stdout
-    except subprocess.CalledProcessError as e:
-        return False, e.stdout + "\n" + e.stderr
 
 def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, str]]]:
     """
@@ -71,8 +65,6 @@ def scan_path_streaming(path: str, recursive: bool = True):
     if recursive:
         cmd.append("-r")
     cmd.append(path)
-
-    print(path)
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -128,6 +120,150 @@ def get_scan_total(path):
         pass  # Skip folders/files we can't access
     return total
     
+def update_all_feeds():
 
-#for file, result in scan_path_streaming("/home/jack/Downloads"):
-#    print(file, result)
+    with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
+        config = file.read()
+
+    toml_dict = tomli.loads(config)
+
+    for i in toml_dict['clam_feeds'].keys():
+        update_feed(i)
+
+
+def update_feed(index):
+    """
+    Updates a feed using the given index which could be a title (as in the "default_daily" in [clam_feeds.default_daily] from the config)
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
+        config = file.read()
+
+    toml_dict = tomli.loads(config)
+
+    try:
+        feed = (toml_dict["clam_feeds"][index])
+    except KeyError:
+        raise Exception("Error: Feed does not exist")
+
+    utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
+
+    #response = requests.get(feed['url'])
+
+    #with open(feed["local_path"].replace("~", str(Path.home())), "wb") as file:
+    #    file.write(response.content)
+
+    return feed
+
+def add_feed(index, name, url, description, local_path, supports_versioning=False, move_into_default_feed_path=True):
+    """
+    Adds a clam feed from the config
+    if `move_into_default_feed_path` is True Menoa will try to copy the given filepath into `~/.menoa/feeds/xxxx``
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    if index in config["clam_feeds"].keys():
+        raise Exception("Error: Feed with index", index, "already exists. This identifier must be unique")
+
+    if move_into_default_feed_path: # Copy filepath into local feed storage
+        new_path = str(Path.home())+"/.menoa/feeds/"+Path(local_path).name
+        shutil.copy2(local_path, new_path)
+        local_path = new_path
+
+    config["clam_feeds"][index] = {
+        "url": url,
+        "name": name,
+        "description": description,
+        "local_path": local_path,
+        "last_refreshed": "1970-01-01T00:00:00",
+        "supports_versioning": supports_versioning
+    }
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+def remove_feed(index):
+    """
+    Removes a clam feed from the config
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    if index not in config["clam_feeds"].keys():
+        raise Exception("Given feed index not found in config")
+
+    config["clam_feeds"].pop(index)
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+def list_feeds():
+    """
+    Returns a dictionary with all of the clam feeds
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    return config["clam_feeds"]
+
+def get_delay():
+    """
+    Returns the delay for scanning
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    return config["clamav"]
+
+def set_scanning_delay(seconds):
+    """
+    Sets the delay for scanning
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    config["clamav"]["scan_delay"] = seconds
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+
+def set_feed_refresh_delay(seconds):
+    """
+    Sets the delay for refresh
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    config["clamav"]["feed_update_delay"] = seconds
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+        
+def toggle(status=None):
+    """
+    Toggles scanning, reverses current status if nothing is passed
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    current = config["clamav"]["enabled"]
+
+    if status is None:
+        config["clamav"]["enabled"] = not current
+    else:
+        config["clamav"]["enabled"] = status
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+    if status is None: return not current
+    else: return status

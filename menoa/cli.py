@@ -5,6 +5,16 @@ CLI interface for Menoa
 import sys
 import click
 from rich.console import Console
+from pathlib import Path
+from tqdm import tqdm
+from rich.table import Table
+from rich import box
+
+import utils.attestation_utils as attestation_utils
+import utils.clam_utils as clam_utils
+import utils.network_utils as network_utils
+import utils.process_utils as process_utils
+import utils.script_utils as script_utils
 
 console = Console()
 
@@ -21,23 +31,61 @@ def clam():
     """ClamAV antivirus related commands"""
     pass
 
+def scan(path):
+    console.print("[yellow]Counting total files...  [/yellow]", end='')
+    total_files = clam_utils.get_scan_total(path)
+    print(total_files)
+
+    #print(total_files)
+    console.print("[yellow]Loading signatures from (get used feeds here)...[/yellow]", end='')
+    progress = None
+
+    first = True
+
+    infected = []
+    sigs = []
+
+    for file, result in clam_utils.scan_path_streaming(path):
+        
+        #print(f"{file} {result}")
+        if result != "OK" and file[0] == "/":
+            infected.append(file)
+            sigs.append(result)
+
+        if progress is None: # If the progress bar is created before the loop it's hung at 0% while the signatures are loaded into memory
+            print()
+            progress = tqdm(desc="Scanning files", unit="file", total=total_files)
+        
+        progress.update(1)
+
+    if progress:
+        progress.close()
+        progress.close()
+
+    if len(infected) == 0:
+        console.print("[green]No malware found![/green]")
+    else:
+        console.print("[red]Malware found[/red]")
+
+        for path, sig in zip(infected, sigs):
+            print(path, sig)
+
 @clam.command(name="quick")
 def clam_quick_scan():
     """
     Scans places in which malware is most often found (~/Downloads)
     """
-    console.print("[yellow]Starting Clam quick scan...[/yellow]")
-    # Implementation
-    console.print("[green]Clam quick scan completed.[/green]")
+    console.print("[blue]Starting quick scan[/blue]")
+    scan(str(Path.home()) + "/Downloads/")
 
 @clam.command(name="full")
 def clam_full_scan():
     """
     Scans the whole system from /
     """
-    console.print("[yellow]Starting Clam full scan...[/yellow]")
-    # Implementation
-    console.print("[green]Clam full scan completed.[/green]")
+    console.print("[blue]Starting full system scan from /[/blue]")
+    scan("/")
+
 
 @clam.command(name="scan")
 @click.argument('path', type=str)
@@ -45,86 +93,104 @@ def clam_custom_scan(path):
     """
     Perform a custom Clam scan using a given file/dir path
     """
-    console.print(f"[yellow]Starting Clam scan from: {path}...[/yellow]")
-    # Implementation
-    console.print("[green]Clam scan completed.[/green]")
+    console.print(f"[blue]Starting scan from: {path}[/blue]")
+    scan(path)
 
 @clam.command(name="reload")
-def clam_reload_feed():
+@click.argument('feed', type=str, required=False)
+def clam_reload_feed(feed=False):
     """
-    Reload Clam feed from source
+    Reload Clam feed from source. If a name or a url is passed then just reload that feed, else reload all
     """
-    console.print("[yellow]Reloading Clam feed(s)... (All feeds and progress here)[/yellow]")
-    # Implementation
-    console.print("[green]Clam feeds reloaded[/green]")
+    if feed:
+        console.print("[yellow]Reloading feed...[/yellow]")
+        clam_utils.update_feed(feed)
+        console.print("[green]Feed reloaded[/green]")
+    else:
+        console.print("[yellow]Reloading feeds...[/yellow]")
+        clam_utils.update_all_feeds()
+        console.print("[green]Feeds reloaded[/green]")   
 
 @clam.command(name="add")
-@click.argument('url', type=str)
-def clam_add_feed(url):
+@click.option('--index', type=str, required=True)
+@click.option('--name', type=str, required=True)
+@click.option('--url', type=str, required=True)
+@click.option('--description', type=str, required=True)
+@click.option('--local-path', type=str, required=True)
+@click.option('--supports-versioning', is_flag=True, default=False)
+@click.option('--centralize', is_flag=True, default=False)
+def clam_add_feed(index, name, url, description, local_path, supports_versioning, centralize):
     """
     Add a new Clam feed.
     """
-    console.print(f"[yellow]Adding Clam feed: {url}... Can be a local file path or a remote url[/yellow]")
-    # Implementation
-    console.print("[green]Clam feed added[/green]")
+    clam_utils.add_feed(index, name, url, description, local_path, supports_versioning, centralize)
+    console.print(f"[green]Added {name}![/green]")
 
 @clam.command(name="remove")
-@click.argument('url', type=str)
-def clam_remove_feed(url):
+@click.option('--index', type=str, required=True)
+def clam_remove_feed(index):
     """
     Remove an existing Clam feed
     """
-    console.print(f"[yellow]Removing Clam feed: {url}...[/yellow]")
-    # Implementation
-    console.print("[green]Clam feed removed[/green]")
+    clam_utils.remove_feed(index)
+    console.print(f"[green]{index} removed![/green]")
 
 @clam.command(name="feeds")
 def clam_list_feeds():
     """
-    Show current Clam feeds
+    Print a table of the current Clam feeds
     """
-    console.print("[yellow]Fetching Clam feeds...[/yellow]")
-    # Implementation
-    console.print("[green]Clam feeds listed[/green]")
+    table = Table(title="ClamAV Signature Feeds", box=box.ROUNDED)
+
+    table.add_column("Index", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Name", style="magenta")
+    table.add_column("Description", style="magenta")
+    table.add_column("Upstream URL", style="magenta")
+    table.add_column("Local Storage", style="magenta")
+    table.add_column("Last Refreshed", style="magenta")
+    table.add_column("Upstream Supports Versioning", style="magenta")
+
+    feeds = clam_utils.list_feeds()
+
+    for i in feeds:
+        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]), str(feeds[i]["supports_versioning"]))
+
+    console.print(table)
 
 @clam.command(name="delay")
-@click.argument('seconds', type=int)
-def clam_set_delay(seconds=False):
+@click.option('--scan', required=False, is_flag=True)
+@click.option('--refresh', required=False, is_flag=True)
+@click.argument('seconds', type=int, required=False)
+def clam_set_delay(scan, refresh, seconds=False):
     """
     Set/get scan delay (in seconds) for Clam. If no delay is passed, prints the delay and exits
     """
-    if not seconds:
-        console.print("[green]Delay: [/green]")
+    if not seconds and refresh:
+        console.print(f"[green]Feed refresh delay: {clam_utils.get_delay()["feed_update_delay"]}[/green]")
+    elif not seconds and not refresh:
+        console.print(f"[green]Scan delay: {clam_utils.get_delay()["scan_delay"]}[/green]")
+    elif seconds and refresh:
+        clam_utils.set_feed_refresh_delay(seconds)
+        console.print(f"[green]Set feed refresh delay to {seconds}")
     else:
-        # Implementation
-        console.print(f"[green]Clam scan delay set to {seconds} seconds...[/green]")
-
-@clam.command(name="on")
-def clam_toggle_background_on():
-    """
-    Toggle Clam background scanning on
-    """
-    console.print("[yellow]Toggling Clam background scan...[/yellow]")
-    # Implementation
-    console.print("[green]Background scan toggled.[/green]")
-
-@clam.command(name="off")
-def clam_toggle_background_off():
-    """
-    Toggle Clam background scanning off
-    """
-    console.print("[yellow]Toggling Clam background scan...[/yellow]")
-    # Implementation
-    console.print("[green]Background scan toggled.[/green]")
+        clam_utils.set_scanning_delay(seconds)
+        console.print(f"[green]Set scanning delay to {seconds}")
 
 @clam.command(name="toggle")
-def clam_toggle_background():
+@click.option('--on', required=False, is_flag=True)
+@click.option('--off', required=False, is_flag=True)
+def clam_toggle_background(on, off):
     """
     Toggle Clam background scanning on/off
     """
-    console.print("[yellow]Toggling Clam background scan...[/yellow]")
-    # Implementation
-    console.print("[green]Background scan toggled.[/green]")
+    if on:
+        clam_utils.toggle(True)
+        console.print("[green]Background scan toggled on[/green]")
+    elif off:
+        clam_utils.toggle(False)
+        console.print("[green]Background scan toggled off[/green]")
+    else:
+        console.print(f"[green]Background scan toggled {clam_utils.toggle()}[/green]")
 
 
 @cli.group()
@@ -280,7 +346,7 @@ def process_remove_feed(url):
 @process.command(name="list")
 def process_list_feeds():
     """
-    Show current process models.
+    Show current process models
     """
     console.print("[yellow]Fetching process models...[/yellow]")
     # Implementation
