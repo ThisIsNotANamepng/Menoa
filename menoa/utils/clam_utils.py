@@ -138,7 +138,7 @@ def get_scan_total(path):
                 elif entry.is_dir(follow_symlinks=False):
                     total += get_scan_total(entry.path)
     except PermissionError:
-        pass  # Skip folders/files we can't access
+        pass  # Skip folders/files menoa can't access
     return total
     
 def update_all_feeds():

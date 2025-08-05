@@ -10,7 +10,9 @@ TODO:
 """
 
 import psutil, csv, time
-from utils.utils import alert
+#from utils.utils import alert
+from pathlib import Path
+import tomli, tomli_w
 
 class ThreatEndpoints:
     def __init__(self):
@@ -29,41 +31,77 @@ class ThreatEndpoints:
         return len(self.endpoints)
 
 def number_of_threats():
-    return(str(threat_endpoints.get_endpoint_count())+" threats tracked")
+    return(str(threat_endpoints.get_endpoint_count())+" Threats Tracked")
 
 def get_interface_summary():
     return "Interface Summary:\n - eth0: UP\n - wlan0: DOWN"
+
+def get_number_of_threats_from_feed(filepath):
+    # Takes a threat feed csv and returns the number of threats tracked in it
+
+    filepath = filepath.replace("~", str(Path.home()))
+    with open(filepath, "r") as f:
+        count = 0
+        for line in f:
+            count += 1
+
+    return count
+
+def get_feed_summary():
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    summary = "\n\nNetwork Feeds Summary:\n"
+
+    print()
+    for i in config["network_feeds"]:
+        summary += " - "+i
+        #summary += " - "+str(config["network_feeds"][i]["last_refreshed"])+"\n"
+        summary += ": "+str(get_number_of_threats_from_feed(config["network_feeds"][i]["local_path"]))+" threats"+"\n"
+
+    return summary
 
 def get_realtime_logs():
     return (connections_check())
 
 def reload_endpoints():
-    # Reloads the enpoints by reading the csv file again
-    print("Reloading...")
+    # Reloads the endpoints by reading the feed csv files again
+    #print("Reloading...")
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    paths = []
+
+    for i in config["network_feeds"]:
+        paths.append(config["network_feeds"][i]["local_path"])
 
     threat_endpoints = []
 
-    with open('../last30_days_active_urlhaus_enpoint.csv', mode='r', newline='') as file:
-        reader = csv.DictReader(file)
-        for row in reader:
+    for i in paths:
+        i = i.replace("~", str(Path.home()))
+        with open(i, mode='r', newline='') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
 
-            # Srtip to just ip address
-            ip = row['url']
+                # Strip to just ip address
+                ip = row['url']
 
-            ip = ip.strip("http://").strip("https://")
+                ip = ip.strip("http://").strip("https://")
 
-            if "/" in ip:
-                ip = ip[:ip.index("/")]
+                if "/" in ip:
+                    ip = ip[:ip.index("/")]
 
-            if ip.count(".") == 3 and not any(c.isalpha() for c in ip):
+                if ip.count(".") == 3 and not any(c.isalpha() for c in ip):
 
-                if ":" in ip:
-                    ip = ip[:ip.index(":")]
-                    
-                threat_endpoints.append(ip)
+                    if ":" in ip:
+                        ip = ip[:ip.index(":")]
+                        
+                    threat_endpoints.append(ip)
     
     threat_endpoints = list(set(threat_endpoints))
 
+    #print("loaded")
     return threat_endpoints
 
 def connections_check(verbose=True, desktop_notification=False):

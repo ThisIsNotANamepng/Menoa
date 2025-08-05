@@ -1,7 +1,4 @@
-from PySide6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit,
-    QGroupBox, QApplication, QSizePolicy, QFileDialog
-)
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog
 from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
 import sys, os
@@ -92,7 +89,7 @@ class ClamPage(QWidget):
 
         # Paths for quick scan
         self._quick_paths = [
-            os.path.expanduser("~/Downloads/yarafy_rules/"),
+            os.path.expanduser("~/Downloads"),
             os.path.expanduser("~/Documents")
         ]
         self._quick_index = 0

@@ -90,7 +90,7 @@ def initialize_config():
     [shell]
 
     [clam_feeds.default_daily]
-    url = "http://127.0.0.1:5000/feeds/daily.cld"
+    url = "http://127.0.0.1:5000/feeds/clam/daily.cld"
     name = "Default daily.cld ClamAV feed"
     description = "Daily signatures bundled with ClamAV"
     local_path = "~/.menoa/feeds/daily.cld"
@@ -98,7 +98,7 @@ def initialize_config():
     supports_versioning = true
 
     [clam_feeds.default_main]
-    url = "http://127.0.0.1:5000/feeds/main.cvd"
+    url = "http://127.0.0.1:5000/feeds/clam/main.cvd"
     name = "Default main.cvd ClamAV feed"
     description = "Main signatures database bundled with ClamAV"
     local_path = "~/.menoa/feeds/main.cvd"
@@ -106,12 +106,21 @@ def initialize_config():
     supports_versioning = true
 
     [clam_feeds.default_bytecode]
-    url = "http://127.0.0.1:5000/feeds/bytecode.cvd"
+    url = "http://127.0.0.1:5000/feeds/clam/bytecode.cvd"
     name = "Default bytecode.cvd ClamAV feed"
     description = "Bytecode database bundled with ClamAV"
     local_path = "~/.menoa/feeds/bytecode.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
+
+    [network_feeds.main]
+    url = "http://127.0.0.1:5000/feeds/network/main.csv"
+    name = "Default Menoa network feed"
+    description = "Menoa's malicious endpoint feed generated from open source>
+    local_path = "~/.menoa/feeds/network/main.csv"
+    last_refreshed = 1970-01-01 00:00:00
+    supports_versioning = true
+
 
     """
 

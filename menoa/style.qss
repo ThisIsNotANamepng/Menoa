@@ -15,10 +15,19 @@ QLabel {
     qproperty-alignment: AlignCenter;
 }
 
+QLabel:hover {
+    color: #FFFFFF;
+}
+
 QPushButton {
     background-color: #2a6bbf;
-    padding: 20px;
     font-size: 18px;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+QPushButton:hover {
+    background-color: #394a81ff;
 }
 
 QGroupBox#clamGroupBox {
@@ -72,6 +81,21 @@ QLabel#clamAVLastScanned {
     qproperty-alignment: AlignLeft;
 }
 
-QLabel:hover {
-    color: #FFFFFF;
+
+QGroupBox {
+    border: 1px solid #D0D0D0;
+    border-radius: 6px;
+    margin-top: 1ex;
+    font-weight: bold;
+    padding: 5px;
 }
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+}
+QTextEdit {
+    border-radius: 4px;
+    padding: 4px;
+}
+
