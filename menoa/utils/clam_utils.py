@@ -45,11 +45,34 @@ def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, 
     results = parse_clamscan_output(output)
     return True, results
 
-def scan_path_streaming(path: str, recursive: bool = True):
+def scan_path_streaming(path: str, scan_type="standard"):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) as they're found.
     """
+
+    cmd = ["clamscan"]
+
+    if os.path.isdir(path):
+        cmd.append("-r")
+
+    if scan_type == "quick":
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/quick/"):
+            cmd.append("-d")
+            cmd.append(str(Path.home())+"/.menoa/feeds/quick/"+feed)
+
+    elif scan_type == "standard":
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/standard/"):
+            cmd.append("-d")
+            cmd.append(str(Path.home())+"/.menoa/feeds/standard/"+feed)
+
+    elif scan_type == "deep":
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/deep/"):
+            cmd.append("-d")
+            cmd.append(str(Path.home())+"/.menoa/feeds/deep/"+feed)
+
+    cmd.append(path)
+
     if not is_clamscan_available():
         print("Clam error")
         yield ("ERROR", "clamscan not found in PATH.")
@@ -59,12 +82,6 @@ def scan_path_streaming(path: str, recursive: bool = True):
         print("path error")
         yield ("ERROR", f"Path not found: {path}")
         return
-
-    cmd = ["clamscan"]
-
-    if recursive:
-        cmd.append("-r")
-    cmd.append(path)
 
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
@@ -108,6 +125,10 @@ def set_last_time_scanned():
         file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
 
 def get_scan_total(path):
+
+    if not os.path.isdir(path):
+        return 1
+
     total = 0
     try:
         with os.scandir(path) as entries:

@@ -104,6 +104,7 @@ Feeds may have upstream_supports_versioning set to True which means that the ser
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
 - [ ] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
+- [ ] In GUI be able to stop a scan mid scan without having to close the window
 
 #### Progress:
 

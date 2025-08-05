@@ -6,11 +6,7 @@ from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
 import sys, os
 
-from utils.clam_utils import (
-    get_scan_total, scan_path_streaming,
-    get_last_time_scanned, get_database_version,
-    set_last_time_scanned
-)
+from utils.clam_utils import get_scan_total, scan_path_streaming, get_last_time_scanned, get_database_version, set_last_time_scanned
 
 class Scanner(QObject):
     progress = Signal(int)
@@ -20,16 +16,23 @@ class Scanner(QObject):
     def set_scan_path(self, path):
         self.scan_path = path
 
+    def set_scan_type(self, scan_type):
+        self.scan_type = scan_type
+
     @Slot()
     def scan(self):
+        print(self.scan_type)
         total_files = get_scan_total(self.scan_path)
-        tick_number = total_files // 1000 if total_files >= 1000 else 1
-        scanned_files = ticked = 0
+        tick_number = total_files / 1000 if total_files >= 1000 else 1
 
-        for file, result in scan_path_streaming(self.scan_path):
+        scanned_files = ticked = last_ticked = 0
+
+        for file, result in scan_path_streaming(self.scan_path, self.scan_type):
             self.log.emit(f"{file} {result}")
+
             scanned_files += 1
-            if total_files >= 1000 and scanned_files % tick_number == 0:
+            if total_files >= 1000 and scanned_files - last_ticked >= tick_number:
+                last_ticked = scanned_files
                 ticked += 1
             else:
                 ticked = min(ticked + (1000 / total_files), 1000)
@@ -89,7 +92,7 @@ class ClamPage(QWidget):
 
         # Paths for quick scan
         self._quick_paths = [
-            os.path.expanduser("~/Downloads"),
+            os.path.expanduser("~/Downloads/yarafy_rules/"),
             os.path.expanduser("~/Documents")
         ]
         self._quick_index = 0
@@ -144,7 +147,7 @@ class ClamPage(QWidget):
         self.status1.setText(f"DB Patch: {ver}, Last changed: {changed}")
         self.status2.setText(f"Last scan: {get_last_time_scanned()}")
 
-    def _start_scan(self, path):
+    def _start_scan(self, path, scan_type="standard"):
         """Helper to wire up a Scanner worker for a single path."""
         if getattr(self, 'scan_thread', None) and self.scan_thread.isRunning():
             return
@@ -152,20 +155,24 @@ class ClamPage(QWidget):
         self.log_box.append(f"Starting scan: {path}")
         self.scan_worker = Scanner()
         self.scan_worker.set_scan_path(path)
+        self.scan_worker.set_scan_type(scan_type)
 
         self.scan_thread = QThread()
         self.scan_worker.moveToThread(self.scan_thread)
         self.scan_thread.started.connect(self.scan_worker.scan)
 
         self.scan_worker.progress.connect(self.circular.setValue)
-        self.scan_worker.progress.connect(lambda v: self.status1.setText(f"Progress: {v}/1000"))
+        self.scan_worker.progress.connect(lambda v: self.status1.setText(f"Progress: {v/10}%"))
         self.scan_worker.log.connect(self.log_box.append)
 
         self.scan_worker.finished.connect(self.scan_thread.quit)
         self.scan_worker.finished.connect(self._load_db_info)
         self.scan_worker.finished.connect(lambda: self.status1.setText("Completed!"))
         self.scan_worker.finished.connect(lambda: self.status2.setText(f"Last scan: {get_last_time_scanned()}"))
-        self.scan_worker.finished.connect(self._maybe_continue_quick)
+
+        if scan_type == "quick":
+            # If it's a quick scan check if there are any more quick scan paths to scan
+            self.scan_worker.finished.connect(self._maybe_continue_quick)
 
         self.scan_thread.start()
 
@@ -174,14 +181,14 @@ class ClamPage(QWidget):
         if self._quick_index < len(self._quick_paths) - 1:
             self._quick_index += 1
             next_path = self._quick_paths[self._quick_index]
-            self._start_scan(next_path)
+            self._start_scan(next_path, "quick")
         else:
             self._quick_index = 0
 
     @Slot()
     def quick_scan(self):
         self._quick_index = 0
-        self._start_scan(self._quick_paths[0])
+        self._start_scan(self._quick_paths[0], "quick")
 
     @Slot()
     def scan_folder(self):
@@ -197,7 +204,7 @@ class ClamPage(QWidget):
 
     @Slot()
     def full_scan(self):
-        self._start_scan("/")
+        self._start_scan("/", "deep")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
