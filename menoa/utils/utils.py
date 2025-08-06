@@ -82,6 +82,7 @@ def initialize_config():
     scan_delay = 600 # 10 minutes
     feed_update_delay = 86400 # 1 day
     enabled = true
+    threshold = 0.7
 
     [attestation]
     scan_delay = 600 # 10 minutes

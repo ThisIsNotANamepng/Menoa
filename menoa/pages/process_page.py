@@ -2,10 +2,11 @@ import sys
 import time
 import psutil
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem
-from PySide6.QtCore import QTimer, QObject
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QStatusBar
+from PySide6.QtCore import QTimer, QObject, QDateTime
+from PySide6.QtGui import QFont, QFontDatabase, QColor
 
-from utils.process_utils import predict
+from utils.process_utils import predict, get_process_threshold, set_process_threshold
 
 # External placeholders
 def get_model_version() -> str:
@@ -14,19 +15,20 @@ def get_model_version() -> str:
 
 class PredictionEngine(QObject):
     def __init__(self):
-        print("engine started")
+        super().__init__()
+        print("Engine started")
+        self.data = ([], [])  # Initialize empty data structure
 
     def scan(self, threshold=0.6):
-        # Does a scan, saves the results to a variable
-        ## Get the threshold form the input box
+        """Perform scan and store results"""
         self.data = predict(threshold)
-    
-    def info(self, pid):
-        # Returns the data from the lastest for a pid 
 
-        if pid in self.data[0]:
-            return self.data[1][self.data[0].index(pid)-1]
-        else:
+    def info(self, pid):
+        """Get prediction info for specific PID"""
+        try:
+            idx = self.data[0].index(pid)
+            return self.data[1][idx]
+        except (ValueError, IndexError):
             return "Unscanned"
 
 class ProcessPage(QWidget):
@@ -44,12 +46,12 @@ class ProcessPage(QWidget):
         top_layout.addWidget(self.version_label)
 
         # Threshold input
-        ## Need to incorporate this into scans and prpbably save it in a config somewhere so it can be used in background scans too
+        ## Need to incorporate this into scans and probably save it in a config somewhere so it can be used in background scans too
         self.threshold_label = QLabel("Threshold:")
         self.threshold_input = QDoubleSpinBox()
         self.threshold_input.setRange(0.0, 1.0)
         self.threshold_input.setSingleStep(0.01)
-        self.threshold_input.setValue(0.5)
+        self.threshold_input.setValue(get_process_threshold())
         top_layout.addWidget(self.threshold_label)
         top_layout.addWidget(self.threshold_input)
 
@@ -70,14 +72,22 @@ class ProcessPage(QWidget):
             "Up Time",
             "Memory (%)",
             "CPU (%)",
-            "Extra Info",
+            "Classification",
         ])
         self.layout.addWidget(self.table)
+
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # PID column
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Time column
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Time column
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Time column
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)  # Time column
 
         # Timer to refresh processes
         self.timer = QTimer()
         self.timer.timeout.connect(self.populate_table)
-        self.timer.start(5000)  # Refresh every 5 seconds
+        self.timer.start(10000)  # Refresh the processes every 10 seconds
 
         # Start en engine which scans and holds results
         engine = PredictionEngine()
@@ -87,31 +97,45 @@ class ProcessPage(QWidget):
 
     def on_scan(self):
         threshold = self.threshold_input.value()
-        predict(threshold)
-
-        self.engine.scan()
+        set_process_threshold(threshold) # The threshold is changed in the global config.toml when the 'scan' button is hit, change it to then the user changes the threshold at all
+        self.engine.scan(threshold)
+        self.populate_table()
 
     def populate_table(self):
+        processes = list(psutil.process_iter(attrs=[
+            'pid', 'cmdline', 'create_time', 'memory_percent', 'cpu_percent'
+        ]))
 
-        engine = self.engine
-
-        engine.scan()
-        
-        processes = list(psutil.process_iter(attrs=['pid', 'cmdline', 'create_time', 'memory_percent', 'cpu_percent']))
         self.table.setRowCount(len(processes))
+        current_time = time.time()
 
         for row, proc in enumerate(processes):
-            pid = proc.info['pid']
-            cmd = " ".join(proc.info['cmdline']) if proc.info['cmdline'] else proc.name()
-            uptime_seconds = time.time() - proc.info['create_time']
-            uptime_str = time.strftime("%H:%M:%S", time.gmtime(uptime_seconds))
-            mem = proc.info['memory_percent']
-            cpu = proc.info['cpu_percent']
-            extra = engine.info(pid)
+            try:
+                pid = proc.info['pid']
+                cmd = " ".join(proc.info['cmdline']) if proc.info['cmdline'] else proc.name()
+                uptime = time.strftime("%H:%M:%S", time.gmtime(current_time - proc.info['create_time']))
+                mem = proc.info['memory_percent']
+                cpu = proc.info['cpu_percent']
+                threat = self.engine.info(pid)
 
-            self.table.setItem(row, 0, QTableWidgetItem(str(pid)))
-            self.table.setItem(row, 1, QTableWidgetItem(cmd))
-            self.table.setItem(row, 2, QTableWidgetItem(uptime_str))
-            self.table.setItem(row, 3, QTableWidgetItem(f"{mem:.1f}"))
-            self.table.setItem(row, 4, QTableWidgetItem(f"{cpu:.1f}"))
-            self.table.setItem(row, 5, QTableWidgetItem(extra))
+                # Apply threat-based styling
+                threat_item = QTableWidgetItem(threat)
+                if "malicious" in threat.lower():
+                    threat_item.setForeground(QColor(220, 53, 69))
+                    threat_item.setFont(QFont("Arial", weight=QFont.Bold))
+                elif "suspicious" in threat.lower():
+                    threat_item.setForeground(QColor(255, 143, 0))
+
+                self.table.setItem(row, 0, QTableWidgetItem(str(pid)))
+                self.table.setItem(row, 1, QTableWidgetItem(cmd))
+                self.table.setItem(row, 2, QTableWidgetItem(uptime))
+                self.table.setItem(row, 3, QTableWidgetItem(f"{mem:.1f}"))
+                self.table.setItem(row, 4, QTableWidgetItem(f"{cpu:.1f}"))
+                self.table.setItem(row, 5, threat_item)
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        # Resize columns after population
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)

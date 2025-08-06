@@ -5,6 +5,30 @@ import joblib
 import psutil
 import os
 import time
+from pathlib import Path
+import tomli, tomli_w
+
+def get_process_threshold():
+    """
+    Gets the threshold for process scanning
+    """
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+    
+    return config["process"]["threshold"]
+
+def set_process_threshold(threshold):
+    """
+    Sets the threshold for process scanning
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    config["process"]["threshold"] = threshold
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
 
 def get_tslpi(pid):
     tslpi = 0
