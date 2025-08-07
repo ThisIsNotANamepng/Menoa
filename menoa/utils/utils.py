@@ -33,6 +33,25 @@ async def desktop_notification(title, text) -> None:
         icon=icon
     )
 
+def get_patch_number(url):
+    # Takes a url and returns the patch number
+
+    return int(url.split("/")[-1].split("_")[1].split(".")[0])
+
+
+def combine_files(source_file, destination_file):
+    try:
+        with open(source_file, 'rb') as source_file:
+            with open(destination_file, 'ab') as destination_file:
+                while True:
+                    chunk = source_file.read(1024)
+                    if not chunk:
+                        break
+                    destination_file.write(chunk)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+
 def progress_download(url, filename):
     
     r = requests.get(url, stream=True, allow_redirects=True)
@@ -51,6 +70,36 @@ def progress_download(url, filename):
             shutil.copyfileobj(r_raw, f)
 
     return path
+
+def progress_patch_download(url, filename, current_version):
+
+
+    try:
+        response = requests.post(
+            url,
+            json={'current_version': 2}
+        )
+        response.raise_for_status()
+        #print(f"Response: {response.text}")
+        urls = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+
+    urls = urls["urls"]
+    sorted_urls = sorted(urls, key=get_patch_number)
+    new_version = 0
+
+    for url in sorted_urls:
+        # Download patch into /tmp file, combine with main feed file
+        new_version = get_patch_number(url)
+        print(f"Patch {new_version}")
+
+        progress_download(url, "/tmp/menoa-tmp-feed-download")
+        combine_files("/tmp/menoa-tmp-feed-download", filename)
+        os.remove("/tmp/menoa-tmp-feed-download")
+
+    return new_version
+
 
 def initialize_config():
     """

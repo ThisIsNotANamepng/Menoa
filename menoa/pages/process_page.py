@@ -6,12 +6,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDouble
 from PySide6.QtCore import QTimer, QObject, QDateTime
 from PySide6.QtGui import QFont, QFontDatabase, QColor
 
-from utils.process_utils import predict, get_process_threshold, set_process_threshold
-
-# External placeholders
-def get_model_version() -> str:
-    ## Replace with actual version
-    return "0.1.0"
+from utils.process_utils import predict, get_process_threshold, set_process_threshold, get_model_version
 
 class PredictionEngine(QObject):
     def __init__(self):

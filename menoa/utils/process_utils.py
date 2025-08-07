@@ -8,6 +8,11 @@ import time
 from pathlib import Path
 import tomli, tomli_w
 
+def get_model_version():
+    # Loads the model and gets the embedded model version
+
+    return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
+
 def get_process_threshold():
     """
     Gets the threshold for process scanning
@@ -108,7 +113,7 @@ def get_trun(pid):
 def predict(threshold: float):
 
     # Load the trained model
-    rf_classifier = joblib.load('ProcessAnalyses.pkl')
+    rf_classifier = joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl")
 
     # Columns: ['TRUN', 'TSLPI', 'TSLPU', 'POLI', 'NICE', 'PRI', 'RTPR', 'CPUNR', 'Status', 'State', 'CPU', 'CMD', 'label']
 

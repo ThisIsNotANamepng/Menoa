@@ -151,7 +151,6 @@ def update_all_feeds():
     for i in toml_dict['clam_feeds'].keys():
         update_feed(i)
 
-
 def update_feed(index):
     """
     Updates a feed using the given index which could be a title (as in the "default_daily" in [clam_feeds.default_daily] from the config)
@@ -167,14 +166,10 @@ def update_feed(index):
     except KeyError:
         raise Exception("Error: Feed does not exist")
 
-    utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
-
-    #response = requests.get(feed['url'])
-
-    #with open(feed["local_path"].replace("~", str(Path.home())), "wb") as file:
-    #    file.write(response.content)
-
-    return feed
+    if feed["supports_versioning"]:
+        utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
+    else:
+        utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
 
 def add_feed(index, name, url, description, local_path, supports_versioning=False, move_into_default_feed_path=True):
     """

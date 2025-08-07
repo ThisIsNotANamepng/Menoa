@@ -99,26 +99,31 @@ Feeds may have upstream_supports_versioning set to True which means that the ser
 - [ ] Should network monitoring include ipv6? Right now it doesn't
 - [ ] I want the ClamAV scanning to run a different color circle as it loads the signatures
 - [ ] When clamav scanning is running, the progress % text line should be in the middle of the circle
-- [ ] When scanning a directory less than 1000 files the logic is wrong I think. When I scanned a smaller dir the circle didn't fill up all the way
 - [ ] Right now ClamAV just uses the official source but you can load your own yara rules, we could make our own threat feed for yara rules combining other sources
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
 - [ ] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
 - [ ] In GUI be able to stop a scan mid scan without having to close the window
+- [ ] Any malware that tampers with a binary could also change its hash value in the database, add a method of signing the hashes received from the api with a key from Menoa
+- [ ] Change the load template button on the command page be a button that pops up an input box for you to put a link to a bash file, it downloads and analyzes (meant for install.sh files)
+- [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
+- [ ] Add comments, clean up code
+- [ ] Right now the attestation get package version function only uses pacman, add more package managers
 
 #### Progress:
 
 - [x] ClamAV functions
 - [ ] Process scanning model
-- [ ] Process continuous scanning
-- [ ] System command testing
+- [x] Process continuous scanning
+- [x] System command testing
 - [ ] Make a good de-obsfucator
 - [x] Binary attestation client
 - [ ] Binary attestation server
-- [ ] Network monitoring
+- [x] Network monitoring
+- [ ] Good background scanning
 
-- [ ] Process scanning GUI
-- [ ] ClamAV GUI
-- [ ] Command testing GUI
+- [x] Process scanning GUI
+- [x] ClamAV GUI
+- [x] Command testing GUI
 - [ ] Binary attestation GUI
-- [ ] Network monitoring GUI
+- [x] Network monitoring GUI
