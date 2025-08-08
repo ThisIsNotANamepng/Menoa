@@ -10,6 +10,9 @@ from pathlib import Path
 import platform
 import shutil
 import time
+import requests
+
+from utils import alert
 
 DB_PATH = str(Path.home())+"/.menoa/attestation.db"
 
@@ -198,10 +201,36 @@ def attest():
 
     print(results)
 
+    #print(results)
+    response = requests.post(
+        'http://localhost:5000/v1/signatures',
+        json=[list(pkg) for pkg in results]
+    )
+
     print(len(results))
+    installed_packages = [row[0] for row in results]
+    
+    for package, status in response.json().items():
+        #print(package, status)
+        if package in installed_packages:
+            installed_packages.remove(package)
+
+        else:
+            if status == "upgrading":
+                # Mark package validated as 0, to be validated later
+                set_validation(package, 0)
+            elif status == "not_in_database":
+                # Mark as 2, not in database and never will be
+                set_validation(package, 2)
+            elif status == "tampered":
+                # Mark package as -1 and alert as tampered
+                set_validation(package, -1)
+                alert("Found Compromised Binary", f"{package} has a compromised signature")
 
 
-
+    for package in installed_packages:
+        # Package has been validated by api
+        set_validation(package, 1)
 
 def register():
     # Registers binaries, hashes, and versions in the local database
@@ -268,40 +297,17 @@ def delete_binary(path):
     conn.commit()
     conn.close()
 
-
-def get_attestation(path, version):
+def set_validation(package, status):
     """
-    Retrieves all rows from 'attestation' table that match the given path and version.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM attestation
-        WHERE path = ? AND version = ?
-    ''', (path, version))
-    
-    results = cursor.fetchall()
-    conn.close()
-    return results
-
-def delete_older_versions(path, min_version):
-    """
-    Deletes rows from 'attestation' table for the given path where version is less than min_version.
-    Note: Version comparison is done lexicographically.
+    Mark the validation status of a package in the database
     """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute('''
-        DELETE FROM attestation
-        WHERE path = ? AND version < ?
-    ''', (path, min_version))
+    cursor.execute("UPDATE attestation SET validated = ? WHERE path = ?", (status, package))
     
     conn.commit()
     conn.close()
 
-#create_table()
-#register()
-#update_database()
+
 attest()

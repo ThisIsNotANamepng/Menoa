@@ -109,6 +109,8 @@ Feeds may have upstream_supports_versioning set to True which means that the ser
 - [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
 - [ ] Add comments, clean up code
 - [ ] Right now the attestation get package version function only uses pacman, add more package managers
+- [ ] Right now downloading versioned feeds combines the temp downloaded file and main file, it put all info on one line, so the feed file is one long line, fix it with newlines
+- [ ] Right now when downloading a versioned feed it doesn't mark the new patch version anywhere, add a place for the current patch version in the config and make it overwrite it when updated 
 
 #### Progress:
 

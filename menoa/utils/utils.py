@@ -22,7 +22,7 @@ def alert(title, text, type="normal", location="desktop"):
 
 async def desktop_notification(title, text) -> None:
     notifier = DesktopNotifier(app_name="Menoa")
-    icon_path = Path("/home/jack/code/LinuxSecuritySystem/gui/notification_icon.png")
+    icon_path = Path("/home/jack/code/Menoa/menoa/notification_icon.png")
     icon = Icon(path=icon_path)
 
     await notifier.send(
