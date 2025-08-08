@@ -12,9 +12,55 @@ import shutil
 import time
 import requests
 
-from utils import alert
+#from utils.utils import alert
 
 DB_PATH = str(Path.home())+"/.menoa/attestation.db"
+
+def get_number_of_binaries():
+    """
+    Returns the total number of binaries in the database
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM attestation")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_binary_data():
+    """
+    Returns a list of tuples containing all data form the database
+    """
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT path, version, hash, validated FROM attestation")
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Convert database rows to display format
+    binary_data = []
+    for path, version, hash_val, validated in rows:
+
+        status = convert_validation_status(validated)
+
+        binary_data.append((path, version, hash_val, status))
+
+    return binary_data
+
+
+def convert_validation_status(validated):
+    """
+    Converts database numeric validation status to human-friendly string
+    """
+    status_map = {
+        1: "Validated",
+        0: "Pending",
+        -1: "Tampered!",
+        2: "Legacy/Not Checkable"
+    }
+
+    return status_map.get(validated, "Unknown")
 
 def get_sha256_hash(input_string):
     # Get the hash of a binary
@@ -32,16 +78,6 @@ def get_sha256_hash(input_string):
     except subprocess.CalledProcessError as e:
         print(f"Error occurred while running sha256sum: {e}")
         return None
-
-def get_binary_data():
-    # Returns a list of tuples, each tuple has the binary path, version, hash, and whether it's been checked with the api
-
-    return ([("name", "version", "hash", "checked"), ("name", "version", "hash", "checked")])
-
-def get_number_of_binaries():
-    # Return the total number of binaries for populating the table
-
-    return 2
 
 def attest_with_server(json):
     # Send json to server and finds the status for sent binaries
@@ -225,7 +261,7 @@ def attest():
             elif status == "tampered":
                 # Mark package as -1 and alert as tampered
                 set_validation(package, -1)
-                alert("Found Compromised Binary", f"{package} has a compromised signature")
+                #alert("Found Compromised Binary", f"{package} has a compromised signature") ##TODO Add this when importing utils works
 
 
     for package in installed_packages:
@@ -308,6 +344,3 @@ def set_validation(package, status):
     
     conn.commit()
     conn.close()
-
-
-attest()

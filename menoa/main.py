@@ -108,13 +108,21 @@ if __name__ == "__main__":
 
     w = MainWidget()
     w.setWindowTitle("System Manager")
-    w.resize(1000, 700)
+    w.resize(300, 100)
     w.show()
 
-    try:
-        with open("style.qss", "r") as f:
+    QApplication.styleHints().colorSchemeChanged.connect(
+        lambda scheme: app.setStyleSheet(load_theme(scheme))
+    )
+
+    if QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+        # System is in dark mode
+        with open("dark_style.qss", "r") as f:
             app.setStyleSheet(f.read())
-    except FileNotFoundError:
-        pass  # optional stylesheet
+    else:
+        # System is in light mode
+        with open("light_style.qss", "r") as f:
+            app.setStyleSheet(f.read())
+
 
     sys.exit(app.exec())

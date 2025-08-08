@@ -99,7 +99,6 @@ QTextEdit {
     padding: 4px;
 }
 
-
 QTableWidget {
     gridline-color: #ccc;
     font-size: 14px;
