@@ -1,39 +1,86 @@
+/* Color Scheme */
+/* Primary: #00b57b | Secondary: #00cf90 */
+/* Background: #FFFFFF | Text: #333333 */
+/* Borders: #E0E0E0 | Secondary Text: #666666 */
+
 QListWidget {
-    color: #FFFFFF;
-    background-color: #33373B;
+    color: #333333;
+    background-color: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 4px;
 }
 
 QListWidget::item {
     height: 50px;
+    padding: 0 10px;
+    background-color: #FFFFFF;
+    color: #333333;
+}
+
+QListWidget::item:hover {
+    background-color: #F5F5F5;
 }
 
 QListWidget::item:selected {
-    background-color: #2a6bbf;
+    background-color: #00cf90;
+    color: #FFFFFF;
+    border: none;
 }
 
 QLabel {
+    color: #333333;
     qproperty-alignment: AlignCenter;
 }
 
 QLabel:hover {
-    color: #FFFFFF;
+    color: #000000;
 }
 
 QPushButton {
-    background-color: #2a6bbf;
+    color: #FFFFFF;
+    background-color: #00b57b;
     font-size: 18px;
     padding: 6px 12px;
     border-radius: 4px;
+    border: none;
+    min-height: 32px;
 }
 
 QPushButton:hover {
-    background-color: #394a81ff;
+    background-color: #009a68;
+}
+
+QPushButton:pressed {
+    background-color: #007f55;
+}
+
+QPushButton:disabled {
+    background-color: #C8E6C9;
+    color: #6B8E6B;
+}
+
+QGroupBox {
+    border: 1px solid #E0E0E0;
+    border-radius: 6px;
+    margin-top: 1ex;
+    font-weight: bold;
+    padding: 5px;
+    background-color: #FFFFFF;
+    color: #333333;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+    color: #00b57b;
+    font-weight: bold;
 }
 
 QGroupBox#clamGroupBox {
+    border: 2px solid #E0E0E0;
     font: bold 16px;
-    color: darkred;
-    border: 2px solid gray;
+    color: #00b57b;
     border-radius: 5px;
     margin-top: 1.5em;
 }
@@ -42,97 +89,119 @@ QGroupBox#clamGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top center;
     padding: 0 3px;
-    color: darkgreen;
+    color: #00cf90;
     font-weight: bold;
 }
 
-QLabel#clamAVDatabaseVersion {
-    color:#868686;
-    font-style: italic;
-    font-size: 14px;
-    width: 30%;
-}
-
+QLabel#clamAVDatabaseVersion,
 QLabel#clamAVLastScanned {
-    color: #868686;
+    color: #666666;
     font-style: italic;
-    font-size: 13px;
-    width: 30%;
+    font-size: 14px;
 }
 
 QLabel#clamAVDatabaseVersion {
-    font-size: 14px;
     qproperty-alignment: AlignRight;
 }
 
 QLabel#clamAVLastScanned {
-    font-size: 14px;
     qproperty-alignment: AlignLeft;
 }
 
 #dashboardRow {
     padding: 10px;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid #E0E0E0;
+    background-color: #FFFFFF;
 }
 
 #dashboardLabel {
     font-size: 14px;
-    color: #ffffff;
+    color: #333333;
     qproperty-alignment: AlignLeft;
 }
 
-
-QGroupBox {
-    border: 1px solid #D0D0D0;
-    border-radius: 6px;
-    margin-top: 1ex;
-    font-weight: bold;
-    padding: 5px;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 5px;
-}
 QTextEdit {
+    background-color: #FFFFFF;
+    color: #333333;
+    border: 1px solid #E0E0E0;
     border-radius: 4px;
     padding: 4px;
+    selection-background-color: #00b57b;
+    selection-color: #FFFFFF;
 }
 
 QTableWidget {
-    gridline-color: #ccc;
+    background-color: #FFFFFF;
+    gridline-color: #E0E0E0;
     font-size: 14px;
-    border: 1px solid #999;
+    border: 1px solid #E0E0E0;
+    color: #333333;
 }
 
 QHeaderView::section {
-    color: white;
+    background-color: #00b57b;
+    color: #FFFFFF;
     padding: 5px;
     font-weight: bold;
+    border: none;
 }
 
 QTableWidget::item {
     padding: 5px;
     border: none;
+    background-color: #FFFFFF;
+    color: #333333;
+}
+
+QTableWidget::item:hover {
+    background-color: #F5F5F5;
 }
 
 QTableWidget::item:selected {
-    background-color: #ffcc66;
-    color: black;
+    background-color: #00cf90;
+    color: #FFFFFF;
 }
 
 QScrollBar:vertical {
     border: none;
-    width: 10px;
+    width: 12px;
     margin: 0px 0px 0px 0px;
+    background: #F5F5F5;
 }
 
 QScrollBar::handle:vertical {
-    background: #999;
+    background: #C0C0C0;
     min-height: 20px;
-    border-radius: 4px;
+    border-radius: 6px;
 }
 
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+QScrollBar::handle:vertical:hover {
+    background: #A0A0A0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+#dashboardCard:hover {
+    border: 1px solid #00b57b; 
+}
+
+#dashboard_label {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+#dashboard_stats_label {
+    font-size: 14px;
+}
+
+#dashboard_stats_value {
+    font-size: 18px;
+    /*color: #00b57b;*/
+}
+
+#dashboard_title {
+    font-size: 32px;
 }

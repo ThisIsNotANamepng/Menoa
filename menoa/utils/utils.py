@@ -9,6 +9,7 @@ import pathlib
 import shutil
 import requests
 from tqdm.auto import tqdm
+import tomli
 
 def alert(title, text, type="normal", location="desktop"):
     """
@@ -171,8 +172,24 @@ def initialize_config():
     last_refreshed = 1970-01-01 00:00:00
     supports_versioning = true
 
-
     """
 
     with open(config_path, "w") as f:
         f.write(default_string)
+
+def get_enabled_tools():
+    """
+    Returns a list of tools which are enabled
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    enabled = []
+
+    if config["clamav"]["enabled"]: enabled.append("clam")
+    if config["network"]["enabled"]: enabled.append("network")
+    if config["process"]["enabled"]: enabled.append("process")
+    if config["attestation"]["enabled"]: enabled.append("attestation")
+
+    return enabled

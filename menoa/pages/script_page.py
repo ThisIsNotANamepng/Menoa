@@ -1,11 +1,38 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QDialog, QLineEdit, QDialogButtonBox
 from PySide6.QtCore import QTimer, Qt
 
-from utils.script_utils import parse_script, predict_actions, load_script_template
+from utils.script_utils import parse_script, predict_actions, load_remote_script
+
+class TemplateDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Menoa - Bash Parsing")
+        self.resize(300, 100)
+
+        # Create input field
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Enter template name...")
+
+        # Create buttons
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+        # Layout setup
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Template Name:"))
+        layout.addWidget(self.input_field)
+        layout.addWidget(self.button_box)
+
+        self.setLayout(layout)
+
+    def get_template_name(self):
+        return self.input_field.text()
 
 class ScriptPage(QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("Menoa - Bash Parsing")
 
         # --- Input Script Box ---
         self.input_group = QGroupBox("Bash Script Input")
@@ -21,8 +48,8 @@ class ScriptPage(QWidget):
         self.controls_group = QGroupBox("Controls")
         self.analyze_button = QPushButton("Analyze Now")
         self.analyze_button.clicked.connect(self.run_analysis)
-        self.load_template_button = QPushButton("Load Template")
-        self.load_template_button.clicked.connect(self.load_template)
+        self.load_template_button = QPushButton("Remote URL")
+        self.load_template_button.clicked.connect(self.show_template_dialog)
 
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(self.analyze_button)
@@ -59,9 +86,16 @@ class ScriptPage(QWidget):
         # Debounce analysis to avoid running on every keystroke
         self.analysis_timer.start(500)  # wait 500ms after last change
 
-    def load_template(self):
-        # Optionally load a starter script template
-        template = load_script_template()
+    def show_template_dialog(self):
+        """Show template loading dialog with text input"""
+        dialog = TemplateDialog(self)
+        if dialog.exec() == QDialog.Accepted:
+            template_name = dialog.get_template_name()
+            self.load_template(template_name)
+
+    def load_template(self, template_name):
+        """Load template using user-provided name"""
+        template = load_remote_script(template_name)
         self.script_input.setPlainText(template)
 
     def run_analysis(self):

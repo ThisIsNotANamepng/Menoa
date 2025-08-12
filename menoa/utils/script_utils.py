@@ -1,16 +1,19 @@
 import shlex
 from typing import List, Dict, Any
+import requests
 
-def load_script_template() -> str:
-    """Returns a sample bash script template for demonstration purposes"""
-    return """#!/bin/bash
-# System maintenance script template
-sudo apt update
-sudo apt upgrade -y
-mkdir -p ~/backup
-tar -czf ~/backup/configs_$(date +%Y%m%d).tar.gz /etc/*.conf
-find ~/logs -name "*.log" -mtime +7 -delete
-echo "Backup completed!" >> ~/backup.log"""
+def load_remote_script(url) -> str:
+    """
+    Returns the text from a remote url
+    """
+
+    if url[0:4] != "http":
+        url = "https://" + url
+
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    return response.text
+
 
 def parse_script(script_text: str) -> List[Dict[str, Any]]:
     """

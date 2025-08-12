@@ -57,19 +57,19 @@ def scan_path_streaming(path: str, scan_type="standard"):
         cmd.append("-r")
 
     if scan_type == "quick":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/quick/"):
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/quick/"):
             cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/quick/"+feed)
+            cmd.append(str(Path.home())+"/.menoa/feeds/clam/quick/"+feed)
 
     elif scan_type == "standard":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/standard/"):
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/standard/"):
             cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/standard/"+feed)
+            cmd.append(str(Path.home())+"/.menoa/feeds/clam/standard/"+feed)
 
     elif scan_type == "deep":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/deep/"):
+        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/deep/"):
             cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/deep/"+feed)
+            cmd.append(str(Path.home())+"/.menoa/feeds/clam/deep/"+feed)
 
     cmd.append(path)
 

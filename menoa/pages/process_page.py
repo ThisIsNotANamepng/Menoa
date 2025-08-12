@@ -30,7 +30,7 @@ class ProcessPage(QWidget):
     def __init__(self, engine):
         super().__init__()
         self.engine = engine
-        self.setWindowTitle("Process Page")
+        self.setWindowTitle("Menoa - Process Scanning")
         self.layout = QVBoxLayout(self)
 
         # Top row widgets
@@ -60,6 +60,7 @@ class ProcessPage(QWidget):
 
         # Table for process log
         self.table = QTableWidget()
+        self.table.verticalHeader().setVisible(False)
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
             "PID",

@@ -83,7 +83,7 @@ class CircularProgress(QWidget):
 class ClamPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ClamAV Scanner")
+        self.setWindowTitle("Menoa - Antivirus")
         self._setup_ui()
         self._load_db_info()
 

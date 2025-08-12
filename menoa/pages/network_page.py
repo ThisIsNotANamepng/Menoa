@@ -7,6 +7,7 @@ from utils.network_utils import number_of_threats, get_interface_summary, get_re
 class NetworkPage(QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("Menoa - Network Scanning")
 
         # --- Top Left Box ---
         self.top_box = QGroupBox("Network Status")
