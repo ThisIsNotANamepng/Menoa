@@ -83,7 +83,7 @@ class ProcessPage(QWidget):
         # Timer to refresh processes
         self.timer = QTimer()
         self.timer.timeout.connect(self.populate_table)
-        self.timer.start(10000)  # Refresh the processes every 10 seconds
+        self.timer.start(10000000) # This freezes the app so I'm just going to make it not run anymore
 
         # Start en engine which scans and holds results
         engine = PredictionEngine()

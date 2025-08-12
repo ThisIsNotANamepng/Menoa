@@ -7,7 +7,7 @@ import tomli, tomli_w
 from pathlib import Path
 import requests
 
-import utils
+import utils.utils as utils
 
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
@@ -184,7 +184,7 @@ def add_feed(index, name, url, description, local_path, supports_versioning=Fals
         raise Exception("Error: Feed with index", index, "already exists. This identifier must be unique")
 
     if move_into_default_feed_path: # Copy filepath into local feed storage
-        new_path = str(Path.home())+"/.menoa/feeds/"+Path(local_path).name
+        new_path = str(Path.home())+"/.menoa/feeds/clam/"+Path(local_path).name
         shutil.copy2(local_path, new_path)
         local_path = new_path
 

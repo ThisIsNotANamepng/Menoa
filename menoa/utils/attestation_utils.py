@@ -11,6 +11,7 @@ import platform
 import shutil
 import time
 import requests
+import tomli, tomli_w
 
 #from utils.utils import alert
 
@@ -344,3 +345,24 @@ def set_validation(package, status):
     
     conn.commit()
     conn.close()
+
+def toggle(status=None):
+    """
+    Toggles attestation, reverses current status if nothing is passed
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    current = config["attestation"]["enabled"]
+
+    if status is None:
+        config["attestation"]["enabled"] = not current
+    else:
+        config["attestation"]["enabled"] = status
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+    if status is None: return not current
+    else: return status

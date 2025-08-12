@@ -1,5 +1,45 @@
 """
 CLI interface for Menoa
+
+Clam
+- Basic/Full/Custom Scan
+- Reload feed from source
+- Add/remove feed
+- See current feeds (main.cld, daily.cvd, any custom feeds)
+- Set scan delay
+- Get scan delay
+- Toggle background on/off
+
+Network
+- Scan
+- Reload current feed
+- Add/remove feed
+- See current feed
+- Set scan delay
+- Get scan delay
+- Toggle background on/off
+
+Process
+- Scan
+- Set detection threshold
+- Get detection threshold
+- Add/remove feed
+- See current feed
+- Toggle background on/off
+
+=On-device personalized learning
+- Toggle on/off
+- More settings here as its developed
+
+Attestation
+- Get current delay
+- Set delay
+- Get current status (what packages are tracked, when were they changed, etc)
+- Toggle on/off
+
+Commands
+- Interpret a bash line
+- Interpret a bash file
 """
 
 import sys
@@ -10,11 +50,11 @@ from tqdm import tqdm
 from rich.table import Table
 from rich import box
 
-#import utils.attestation_utils as attestation_utils
+import utils.attestation_utils as attestation_utils
 #import utils.clam_utils as clam_utils
 #import utils.network_utils as network_utils
 #import utils.process_utils as process_utils
-#import utils.script_utils as script_utils
+import utils.script_utils as script_utils
 
 console = Console()
 
@@ -461,32 +501,22 @@ def attest_get_status():
     # Implementation
     console.print(f"Current status: [bold]{status}[/bold]")
 
-@attestation.command(name="on")
-def attest_toggle_on():
-    """
-    Toggle attestation on.
-    """
-    console.print("[yellow]Toggling attestation... On...[/yellow]")
-    # Implementation
-    console.print("[green]Attestation on[/green]")
-
-@attestation.command(name="off")
-def attest_toggle_off():
-    """
-    Toggle attestation off
-    """
-    console.print("[yellow]Toggling attestation... Off...[/yellow]")
-    # Implementation
-    console.print("[green]Attestation off[/green]")
-
 @attestation.command(name="toggle")
-def attest_toggle():
+@click.option('--on', required=False, is_flag=True)
+@click.option('--off', required=False, is_flag=True)
+def attest_toggle_background(on, off):
     """
-    Toggle attestation on/off.
+    Toggle attestation background scanning on/off
     """
-    console.print("[yellow]Toggling attestation...[/yellow]")
-    # Implementation
-    console.print("[green]Attestation toggled.[/green]")
+
+    if on:
+        attestation_utils.toggle(True)
+        console.print("[green]Background scan toggled on[/green]")
+    elif off:
+        attestation_utils.toggle(False)
+        console.print("[green]Background scan toggled off[/green]")
+    else:
+        console.print(f"[green]Background scan toggled {attestation_utils.toggle()}[/green]")
 
 
 @cli.group(name="shell")
@@ -507,47 +537,3 @@ def shell_interpret_source(source):
 
 if __name__ == "__main__":
     cli()
-
-"""
-Needed
-
-Clam
-- Basic/Full/Custom Scan
-- Reload feed from source
-- Add/remove feed
-- See current feeds (main.cld, daily.cvd, any custom feeds)
-- Set scan delay
-- Get scan delay
-- Toggle background on/off
-
-Network
-- Scan
-- Reload current feed
-- Add/remove feed
-- See current feed
-- Set scan delay
-- Get scan delay
-- Toggle background on/off
-
-Process
-- Scan
-- Set detection threshold
-- Get detection threshold
-- Add/remove feed
-- See current feed
-- Toggle background on/off
-
-=On-device personalized learning
-- Toggle on/off
-- More settings here as its developed
-
-Attestation
-- Get current delay
-- Set delay
-- Get current status (what packages are tracked, when were they changed, etc)
-- Toggle on/off
-
-Commands
-- Interpret a bash line
-- Interpret a bash file
-"""

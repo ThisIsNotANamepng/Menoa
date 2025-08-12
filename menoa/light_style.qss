@@ -1,43 +1,54 @@
-/* Color Scheme */
+/* Light Color Scheme */
 /* Primary: #00b57b | Secondary: #00cf90 */
 /* Background: #FFFFFF | Text: #333333 */
 /* Borders: #E0E0E0 | Secondary Text: #666666 */
 
+/* Dark Color Scheme */
+/* Primary: #00b57b | Secondary: #00cf90 */
+/* Background: #252a2e | Text: #e0e0e0 */
+/* Borders: #40454a | Secondary Text: #a0a0a0 */
+
+/* Note: The app currently cannot detect light vs dark mode so I filled the light mode file with the dark mode styling */
+
+QWidget {
+    background-color: #252a2e;
+}
+
 QListWidget {
-    color: #333333;
-    background-color: #FFFFFF;
-    border: 1px solid #E0E0E0;
+    color: #e0e0e0;
+    background-color: #252a2e;
+    border: 1px solid #40454a;
     border-radius: 4px;
 }
 
 QListWidget::item {
     height: 50px;
     padding: 0 10px;
-    background-color: #FFFFFF;
-    color: #333333;
+    background-color: #252a2e;
+    color: #e0e0e0;
 }
 
 QListWidget::item:hover {
-    background-color: #F5F5F5;
+    background-color: #2d3337;
 }
 
 QListWidget::item:selected {
     background-color: #00cf90;
-    color: #FFFFFF;
+    color: #000000;
     border: none;
 }
 
 QLabel {
-    color: #333333;
+    color: #e0e0e0;
     qproperty-alignment: AlignCenter;
 }
 
 QLabel:hover {
-    color: #000000;
+    color: #ffffff;
 }
 
 QPushButton {
-    color: #FFFFFF;
+    color: #ffffff;
     background-color: #00b57b;
     font-size: 18px;
     padding: 6px 12px;
@@ -55,18 +66,18 @@ QPushButton:pressed {
 }
 
 QPushButton:disabled {
-    background-color: #C8E6C9;
-    color: #6B8E6B;
+    background-color: #1a5c42;
+    color: #6c7a6c;
 }
 
 QGroupBox {
-    border: 1px solid #E0E0E0;
+    border: 1px solid #40454a;
     border-radius: 6px;
     margin-top: 1ex;
     font-weight: bold;
     padding: 5px;
-    background-color: #FFFFFF;
-    color: #333333;
+    background-color: #252a2e;
+    color: #e0e0e0;
 }
 
 QGroupBox::title {
@@ -78,7 +89,7 @@ QGroupBox::title {
 }
 
 QGroupBox#clamGroupBox {
-    border: 2px solid #E0E0E0;
+    border: 2px solid #40454a;
     font: bold 16px;
     color: #00b57b;
     border-radius: 5px;
@@ -95,7 +106,7 @@ QGroupBox#clamGroupBox::title {
 
 QLabel#clamAVDatabaseVersion,
 QLabel#clamAVLastScanned {
-    color: #666666;
+    color: #a0a0a0;
     font-style: italic;
     font-size: 14px;
 }
@@ -110,37 +121,36 @@ QLabel#clamAVLastScanned {
 
 #dashboardRow {
     padding: 10px;
-    border-bottom: 1px solid #E0E0E0;
-    background-color: #FFFFFF;
+    border-bottom: 1px solid #40454a;
+    background-color: #252a2e;
 }
 
 #dashboardLabel {
     font-size: 14px;
-    color: #333333;
+    color: #e0e0e0;
     qproperty-alignment: AlignLeft;
 }
 
 QTextEdit {
-    background-color: #FFFFFF;
-    color: #333333;
-    border: 1px solid #E0E0E0;
+    background-color: #2d3337;
+    color: #e0e0e0;
+    border: 1px solid #40454a;
     border-radius: 4px;
     padding: 4px;
     selection-background-color: #00b57b;
-    selection-color: #FFFFFF;
 }
 
 QTableWidget {
-    background-color: #FFFFFF;
-    gridline-color: #E0E0E0;
+    background-color: #252a2e;
+    gridline-color: #40454a;
     font-size: 14px;
-    border: 1px solid #E0E0E0;
-    color: #333333;
+    border: 1px solid #40454a;
+    color: #e0e0e0;
 }
 
 QHeaderView::section {
     background-color: #00b57b;
-    color: #FFFFFF;
+    color: #ffffff;
     padding: 5px;
     font-weight: bold;
     border: none;
@@ -149,39 +159,44 @@ QHeaderView::section {
 QTableWidget::item {
     padding: 5px;
     border: none;
-    background-color: #FFFFFF;
-    color: #333333;
+    background-color: #252a2e;
+    color: #e0e0e0;
 }
 
 QTableWidget::item:hover {
-    background-color: #F5F5F5;
+    background-color: #2d3337;
 }
 
 QTableWidget::item:selected {
     background-color: #00cf90;
-    color: #FFFFFF;
+    color: #000000;
 }
 
 QScrollBar:vertical {
     border: none;
     width: 12px;
     margin: 0px 0px 0px 0px;
-    background: #F5F5F5;
+    background: #252a2e;
 }
 
 QScrollBar::handle:vertical {
-    background: #C0C0C0;
+    background: #40454a;
     min-height: 20px;
     border-radius: 6px;
 }
 
 QScrollBar::handle:vertical:hover {
-    background: #A0A0A0;
+    background: #50555a;
 }
 
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+#dashboardCard {
+    border: 1px solid #40454a;
+    background-color: 
 }
 
 #dashboardCard:hover {
@@ -205,3 +220,5 @@ QScrollBar::sub-line:vertical {
 #dashboard_title {
     font-size: 32px;
 }
+
+/*#cardHeader:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #e6fff5, stop:1 #d1ffe9); }*/

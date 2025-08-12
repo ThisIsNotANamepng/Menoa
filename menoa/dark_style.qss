@@ -3,6 +3,10 @@
 /* Background: #252a2e | Text: #e0e0e0 */
 /* Borders: #40454a | Secondary Text: #a0a0a0 */
 
+QWidget {
+    background-color: #252a2e;
+}
+
 QListWidget {
     color: #e0e0e0;
     background-color: #252a2e;
@@ -181,6 +185,11 @@ QScrollBar::handle:vertical:hover {
 QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {
     height: 0px;
+}
+
+#dashboardCard {
+    border: 1px solid #40454a;
+    background-color: 
 }
 
 #dashboardCard:hover {

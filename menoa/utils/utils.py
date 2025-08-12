@@ -78,7 +78,7 @@ def progress_patch_download(url, filename, current_version):
     try:
         response = requests.post(
             url,
-            json={'current_version': 2}
+            json={'current_version': current_version}
         )
         response.raise_for_status()
         #print(f"Response: {response.text}")
@@ -144,7 +144,7 @@ def initialize_config():
     url = "http://127.0.0.1:5000/feeds/clam/daily.cld"
     name = "Default daily.cld ClamAV feed"
     description = "Daily signatures bundled with ClamAV"
-    local_path = "~/.menoa/feeds/daily.cld"
+    local_path = "~/.menoa/feeds/clam/daily.cld"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
 
@@ -152,7 +152,7 @@ def initialize_config():
     url = "http://127.0.0.1:5000/feeds/clam/main.cvd"
     name = "Default main.cvd ClamAV feed"
     description = "Main signatures database bundled with ClamAV"
-    local_path = "~/.menoa/feeds/main.cvd"
+    local_path = "~/.menoa/feeds/clam/main.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
 
@@ -160,7 +160,7 @@ def initialize_config():
     url = "http://127.0.0.1:5000/feeds/clam/bytecode.cvd"
     name = "Default bytecode.cvd ClamAV feed"
     description = "Bytecode database bundled with ClamAV"
-    local_path = "~/.menoa/feeds/bytecode.cvd"
+    local_path = "~/.menoa/feeds/clam/bytecode.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
 
