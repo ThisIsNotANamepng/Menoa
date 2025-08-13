@@ -27,12 +27,6 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - Focus on intelligent, important features and minimal bloat
 - Scriptable
 
-And also
-
-- Should also be options to turn any of the above tools on/off
-- Should be able to run and be useful without root
-
-
 ## To Install
 
 ### Linux
@@ -71,5 +65,6 @@ And also
 - [ ] Right now downloading versioned feeds combines the temp downloaded file and main file, it put all info on one line, so the feed file is one long line, fix it with newlines
 - [ ] Right now when downloading a versioned feed it doesn't mark the new patch version anywhere, add a place for the current patch version in the config and make it overwrite it when updated 
 - [ ] Update the last_checked column in the attestation database
+- [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 
 Written by [Jack Hagen](https://hagen.rip)
