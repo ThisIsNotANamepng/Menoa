@@ -46,6 +46,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 ### Big changes:
 
 - [ ] Add a clock to have Menoa run in the background
+- [ ] Add feed management to the GUI
 
 ### Other features:
 
