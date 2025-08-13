@@ -67,5 +67,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Right now when downloading a versioned feed it doesn't mark the new patch version anywhere, add a place for the current patch version in the config and make it overwrite it when updated 
 - [ ] Update the last_checked column in the attestation database
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
+- [ ] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan
+- [ ] Add option to do different types of scans in the GUI
 
 Written by [Jack Hagen](https://hagen.rip)
