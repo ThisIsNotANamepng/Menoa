@@ -5,7 +5,7 @@ Clam
 - Basic/Full/Custom Scan
 - Reload feed from source
 - Add/remove feed
-- See current feeds (main.cld, daily.cvd, any custom feeds)
+- See current feeds (main.cvd, daily.cvd, any custom feeds)
 - Set scan delay
 - Get scan delay
 - Toggle background on/off

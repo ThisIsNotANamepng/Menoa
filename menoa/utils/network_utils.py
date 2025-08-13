@@ -66,6 +66,7 @@ def get_realtime_logs():
 
 def reload_endpoints():
     # Reloads the endpoints by reading the feed csv files again
+    ## TODO: Make this read the actual feeds instead of the local dev file
     #print("Reloading...")
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:

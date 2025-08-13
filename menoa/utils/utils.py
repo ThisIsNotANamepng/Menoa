@@ -115,6 +115,21 @@ def initialize_config():
     if not os.path.exists(home_path + "/.menoa/feeds/"):
         os.mkdir(home_path + '/.menoa/feeds')
 
+    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
+        os.mkdir(home_path + '/.menoa/feeds/clam')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/network"):
+        os.mkdir(home_path + '/.menoa/feeds/network')
+
     config_path = home_path + "/.menoa/config.toml"
 
     default_string = """
@@ -141,12 +156,13 @@ def initialize_config():
     [shell]
 
     [clam_feeds.default_daily]
-    url = "http://127.0.0.1:5000/feeds/clam/daily.cld"
-    name = "Default daily.cld ClamAV feed"
+    url = "http://127.0.0.1:5000/feeds/clam/daily.cvd"
+    name = "Default daily.cvd ClamAV feed"
     description = "Daily signatures bundled with ClamAV"
-    local_path = "~/.menoa/feeds/clam/daily.cld"
+    local_path = "~/.menoa/feeds/clam/daily.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
+    current_version = 1
 
     [clam_feeds.default_main]
     url = "http://127.0.0.1:5000/feeds/clam/main.cvd"
@@ -155,6 +171,7 @@ def initialize_config():
     local_path = "~/.menoa/feeds/clam/main.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
+    current_version = 1
 
     [clam_feeds.default_bytecode]
     url = "http://127.0.0.1:5000/feeds/clam/bytecode.cvd"
@@ -163,6 +180,7 @@ def initialize_config():
     local_path = "~/.menoa/feeds/clam/bytecode.cvd"
     last_refreshed = 1970-01-01T00:00:00
     supports_versioning = true
+    current_version = 1
 
     [network_feeds.main]
     url = "http://127.0.0.1:5000/feeds/network/main.csv"
@@ -171,7 +189,7 @@ def initialize_config():
     local_path = "~/.menoa/feeds/network/main.csv"
     last_refreshed = 1970-01-01 00:00:00
     supports_versioning = true
-
+    current_version = 1
     """
 
     with open(config_path, "w") as f:

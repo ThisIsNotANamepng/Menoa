@@ -80,9 +80,9 @@ This is an example feed (a default one packaged with Menoa)
 
     [clam_feeds.default_daily]
     url = "menoa.org/feed.default"              # Upstream url to re-download from. If the feed is a one-time, non-updating dataset just set this to the same as `local_path`
-    name = "Default daily.cld ClamAV feed"      # Name of the feed
+    name = "Default daily.cvd ClamAV feed"      # Name of the feed
     description = "Daily bundled with ClamAV"   # One line description of the feed
-    local_path = ~/.menoa/feeds/daily.cld       # The local path to the current feed dataset on the system (must be read available to the user running Menoa)
+    local_path = ~/.menoa/feeds/daily.cvd       # The local path to the current feed dataset on the system (must be read available to the user running Menoa)
     last_refreshed = 1970-01-01T00:00:00        # The last time the dataset was re-downloaded from `url`
     upstream_supports_versioning = True         # Whether or not the upstream download `url` supports versioning, allowing to download the changes to a feed dataset instead of redownloadig the entire dataset every time it's redownloaded. See 'Upstream Versioning' for more information
 

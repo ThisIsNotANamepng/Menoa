@@ -7,7 +7,7 @@ import tomli, tomli_w
 from pathlib import Path
 import requests
 
-import utils.utils as utils
+#import utils.utils as utils
 
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
@@ -156,6 +156,10 @@ def update_feed(index):
     Updates a feed using the given index which could be a title (as in the "default_daily" in [clam_feeds.default_daily] from the config)
     """
 
+    if index == "default_main" or index == "default_daily" or index == "default_bytecode":
+        update_clamav_feed()
+        return
+
     with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
         config = file.read()
 
@@ -170,6 +174,41 @@ def update_feed(index):
         utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
     else:
         utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
+
+def update_clamav_feed():
+    """
+    Updates the feed using cvdupdate, which uses clamav's servers
+
+    Only used for clamav feeds bytecode.cvd, main.cvd, daily.cvd (downloaded as daily.cvd)
+
+    Assumes that all clamav default feed files are in ~/.menoa/feeds/clam/
+    """
+
+    print("Updating clamav feeds...")
+
+    # Set the database directory to the feed dir instead of the default /var/lib/clamav
+
+    result = subprocess.run(
+        ['cvdupdate', 'config', 'set', '--dbdir', str(Path.home())+"/.menoa/feeds/clam"],
+        check=True,
+        text=True,
+        capture_output=True
+    )
+
+    result = subprocess.run(
+        ['cvdupdate', 'update'],
+        check=True,
+        text=True,
+        capture_output=True
+    )
+
+    # cvdupdate makes a dns.txt and some .cdiff files, we need to delete those
+    path = Path(str(Path.home())+"/.menoa/feeds/clam/")
+    if Path(Path(str(Path.home())+"/.menoa/feeds/clam/dns.txt")).is_file():
+        os.remove(str(Path.home())+"/.menoa/feeds/clam/dns.txt")
+
+    for file_path in path.glob("*.cdiff"):
+        file_path.unlink()
 
 def add_feed(index, name, url, description, local_path, supports_versioning=False, move_into_default_feed_path=True):
     """
