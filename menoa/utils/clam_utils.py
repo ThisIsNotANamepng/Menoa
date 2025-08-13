@@ -109,19 +109,19 @@ def get_database_version():
     return (full[1], full[2])
 
 def get_last_time_scanned():
-    # Returns the last time the system was scanned, found in /gui/data/last_scanned
+    # Returns the last time the system was scanned
 
     last_scanned = ""
 
-    with open("data/last_scanned", "r") as file:
+    with open(str(Path.home())+"/.menoa/clam_last_scanned", "r") as file:
         last_scanned = file.read()
 
     return last_scanned
 
 def set_last_time_scanned():
-    # Updates the last time the system was scanned, found in /gui/data/last_scanned
+    # Updates the last time the system was scanned
 
-    with open("data/last_scanned", "w") as file:
+    with open(str(Path.home())+"/.menoa/clam_last_scanned", "w") as file:
         file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
 
 def get_scan_total(path):
