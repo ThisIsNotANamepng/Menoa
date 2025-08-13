@@ -52,6 +52,7 @@ And also
 ### Big changes:
 
 - [ ] Add a clock to have Menoa run in the background
+- [ ] Add feed management to the GUI
 
 ### Other features:
 
