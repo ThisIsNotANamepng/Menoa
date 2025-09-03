@@ -145,6 +145,23 @@ def initialize_config():
     if not os.path.exists(home_path + "/.menoa/feeds/network"):
         os.mkdir(home_path + '/.menoa/feeds/network')
 
+    # Download all the default feeds
+    from menoa.utils.clam_utils import update_all_feeds
+    update_all_feeds()
+
+    # Symlink into quick/standard/deep
+    clam_path = home_path+"/.menoa/feeds/clam"
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/quick/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/quick/bytecode.cvd")
+
+    os.symlink(clam_path + "/main.cvd", clam_path + "/standard/main.cvd")
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/standard/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/standard/bytecode.cvd")
+
+    os.symlink(clam_path + "/main.cvd", clam_path + "/deep/main.cvd")
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
+
     config_path = home_path + "/.menoa/config.toml"
 
     default_string = """
