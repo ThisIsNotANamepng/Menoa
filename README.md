@@ -69,5 +69,8 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 - [ ] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan
 - [ ] Add option to do different types of scans in the GUI
+- [ ] Add util to completely redonwload feeds, getting rid of past feed signatures
+- [ ] Process scanning returns processes above the threshold as beningn, but only some
+- [ ] Add a status option for cli tools to see whether background work is on or off
 
 Written by [Jack Hagen](https://hagen.rip)

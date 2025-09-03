@@ -416,7 +416,7 @@ def process_scan(threshold=0.75):
 
         table.add_column("PID", justify="right", style="cyan", no_wrap=True)
         table.add_column("Prediction", style="magenta")
-        table.add_column("Confidence", style="magenta")
+        table.add_column("Confidence (Benign)", style="magenta")
 
         for pid, pred, conf in zip(results[0], results[1], results[2]):
             #print(conf, threshold, conf>threshold)
@@ -424,73 +424,105 @@ def process_scan(threshold=0.75):
                 table.add_row(str(pid), pred, f"{conf:.4f}")
 
         console.print(table)
+    
 
 @process.command(name="delay")
-@click.argument('seconds', type=float, required=False)
-def process_set_delay(seconds=False):
+@click.argument('seconds', type=float)
+def process_set_threshold(seconds=False):
     """
     Set/get process scan delay (in seconds). If no delay is passed, prints the delay and exits
     """
-
-    import menoa.utils.process_utils as process_utils
-
     if not seconds:
-        console.print(f"[green]Delay: {process_utils.get_scanning_delay()}[/green]")
+        console.print("[green]Delay: [/green]")
     else:
-        process_utils.set_scanning_delay(seconds)
-        console.print(f"[green]Process scan delay set to {seconds} seconds[/green]")
+        # Implementation
+        console.print(f"[green]Process scan delay set to {seconds} seconds...[/green]")
 
 @process.command(name="threshold")
-@click.argument('threshold', type=float, required=False)
+@click.argument('threshold', type=float)
 def process_get_threshold(threshold=False):
     """
     Set/get process scan detection threshold. If no threshold is passed, prints the delay and exits
     """
-
-    import menoa.utils.process_utils as process_utils
-
     if not threshold:
-        console.print(f"[green]Threshold: {process_utils.get_process_threshold()}[/green]")
+        console.print("[green]Threshold: [/green]")
     else:
-        process_utils.set_scanning_threshold(threshold)
+        # Implementation
         console.print(f"[green]Process scan threshold set to {threshold}[/green]")
 
-@process.command(name="toggle")
-@click.option('--on', required=False, is_flag=True)
-@click.option('--off', required=False, is_flag=True)
-def process_toggle_background_on(on, off):
-    """    
-    Toggle network background scanning on
+@process.command(name="add")
+@click.argument('url', type=str)
+def process_add_feed(url):
     """
-    import menoa.utils.process_utils as process_utils
+    Add a new process model
+    """
+    console.print(f"[yellow]Adding process classification model: {url}...[/yellow]")
+    # Implementation
+    console.print("[green]Process model added[/green]")
 
-    if on:
-        process_utils.toggle(True)
-        console.print("[green]Background scan toggled on[/green]")
-    elif off:
-        process_utils.toggle(False)
-        console.print("[green]Background scan toggled off[/green]")
-    else:
-        console.print(f"[green]Background scan toggled {process_utils.toggle()}[/green]")
+@process.command(name="remove")
+@click.argument('url', type=str)
+def process_remove_feed(url):
+    """
+    Remove an existing process model
+    """
+    console.print(f"[yellow]Removing process model: {url}...[/yellow]")
+    # Implementation
+    console.print("[green]Process feed removed.[/green]")
 
-"""
+@process.command(name="list")
+def process_list_feeds():
+    """
+    Show current process models
+    """
+    console.print("[yellow]Fetching process models...[/yellow]")
+    # Implementation
+    console.print("[green]Listed process models...[/green]")
+
+@process.command(name="off")
+def process_toggle_background_off():
+    """
+    Toggle process background monitoring off
+    """
+    console.print("[yellow]Toggling process background monitoring off...[/yellow]")
+    # Implementation
+    console.print("[green]Background monitoring off[/green]")
+
+@process.command(name="on")
+def process_toggle_background_on():
+    """
+    Toggle process background monitoring on
+    """
+    console.print("[yellow]Toggling process background monitoring on...[/yellow]")
+    # Implementation
+    console.print("[green]Background monitoring on[/green]")
+
+@process.command(name="toggle")
+def process_toggle_background():
+    """
+    Toggle process background monitoring on/off
+    """
+    console.print("[yellow]Toggling process background monitoring...[/yellow]")
+    # Implementation
+    console.print("[green]Background monitoring toggled[/green]")
+
 # --------------------
 # On-device Personalized Learning Commands
 # --------------------
 @cli.group(name="ondevice")
 def ondevice():
-    #On-device personalized learning commands
+    """On-device personalized learning commands"""
     pass
 
 @ondevice.command(name="toggle")
 def ondevice_toggle():
-    
-    #Toggle on-device personalized learning on/off.
-    
+    """
+    Toggle on-device personalized learning on/off.
+    """
     console.print("[yellow]On-device learning is a work in progress, check back later to use this tool[/yellow]")
     # Implementation
     #console.print("[green]On-device learning toggled.[/green]")
-"""
+
 
 @cli.group()
 def attestation():
@@ -498,35 +530,31 @@ def attestation():
     pass
 
 @attestation.command(name="delay")
-@click.argument('seconds', type=float, required=False)
-def attestation_set_delay(seconds=False):
+def attest_get_delay(seconds=False):
     """
-    Set/get process scan delay (in seconds). If no delay is passed, prints the delay and exits
+    Set/get scan delay (in seconds) for attestation. If no delay is passed, prints the delay and exits
     """
-
     if not seconds:
-        console.print(f"[green]Delay: {attestation_utils.get_scanning_delay()}[/green]")
+        console.print("[green]Delay: [/green]")
     else:
-        attestation_utils.set_scanning_delay(seconds)
-        console.print(f"[green]Process scan delay set to {seconds} seconds[/green]")
+        # Implementation
+        console.print(f"[green]Attestation delay set to {seconds} seconds...[/green]")
 
-"""
 @attestation.command(name="status")
 def attest_get_status():
-
-    #Get current attestation status
-    
+    """
+    Get current attestation status
+    """
     console.print("[yellow]Fetching attestation status...[/yellow]")
     # Implementation
     console.print(f"Current status: [bold]{status}[/bold]")
-"""
 
 @attestation.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def attestation_toggle_background_on(on, off):
-    """    
-    Toggle network background scanning on
+def attest_toggle_background(on, off):
+    """
+    Toggle attestation background scanning on/off
     """
 
     if on:
@@ -540,27 +568,19 @@ def attestation_toggle_background_on(on, off):
 
 
 @cli.group(name="shell")
-def shell():
-    """Bash intepreter related commands"""
+def commands():
+    """Bash command interpreter"""
     pass
 
-@shell.command(name="explain")
+@commands.command(name="explain")
 @click.argument('source', type=str)
 def shell_interpret_source(source):
     """
     Interpret and execute a single bash line or file
     """
-    console.print(f"[yellow]Interpreting: {source}[/yellow]")
-    if "http://" in source or "https://" in source:
-        script = script_utils.load_remote_script(source)
-    elif Path(source).exists():
-        script = script_utils.load_local_script(source)
-    else:
-        console.print("[yellow]Error: Source is neither a valid file path nor a URL. Exiting.[/yellow]")
-        
-    script = script_utils.parse_script(script)
-    for i in (script_utils.predict_actions(script)):
-        print(i)
+    console.print(f"[yellow]Interpreting: {source}...[/yellow]")
+    # Implementation
+    console.print("[green]Explained[/green]")
 
 @cli.command()
 def init():
