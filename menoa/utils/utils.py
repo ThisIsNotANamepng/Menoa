@@ -123,46 +123,10 @@ def initialize_config():
     """
 
     home_path = str(Path.home())
+    config_path = home_path + "/.menoa/config.toml"
 
     if not os.path.exists(home_path + "/.menoa/"):
-        os.mkdir(home_path + '/.menoa')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/"):
-        os.mkdir(home_path + '/.menoa/feeds')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
-        os.mkdir(home_path + '/.menoa/feeds/clam')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/network"):
-        os.mkdir(home_path + '/.menoa/feeds/network')
-
-    # Download all the default feeds
-    from menoa.utils.clam_utils import update_all_feeds
-    update_all_feeds()
-
-    # Symlink into quick/standard/deep
-    clam_path = home_path+"/.menoa/feeds/clam"
-    os.symlink(clam_path + "/daily.cvd", clam_path + "/quick/daily.cvd")
-    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/quick/bytecode.cvd")
-
-    os.symlink(clam_path + "/main.cvd", clam_path + "/standard/main.cvd")
-    os.symlink(clam_path + "/daily.cvd", clam_path + "/standard/daily.cvd")
-    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/standard/bytecode.cvd")
-
-    os.symlink(clam_path + "/main.cvd", clam_path + "/deep/main.cvd")
-    os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
-    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
-
-    config_path = home_path + "/.menoa/config.toml"
+        os.mkdir(home_path + '/.menoa/')
 
     default_string = """
     [clamav]
@@ -227,6 +191,41 @@ def initialize_config():
     with open(config_path, "w") as f:
         f.write(default_string)
 
+    if not os.path.exists(home_path + "/.menoa/feeds/"):
+        os.mkdir(home_path + '/.menoa/feeds')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
+        os.mkdir(home_path + '/.menoa/feeds/clam')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/network"):
+        os.mkdir(home_path + '/.menoa/feeds/network')
+
+    # Download all the default feeds
+    from menoa.utils.clam_utils import update_all_feeds
+    update_all_feeds()
+
+    # Symlink into quick/standard/deep
+    clam_path = home_path+"/.menoa/feeds/clam"
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/quick/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/quick/bytecode.cvd")
+
+    os.symlink(clam_path + "/main.cvd", clam_path + "/standard/main.cvd")
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/standard/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/standard/bytecode.cvd")
+
+    os.symlink(clam_path + "/main.cvd", clam_path + "/deep/main.cvd")
+    os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
+    os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
+
 def get_enabled_tools():
     """
     Returns a list of tools which are enabled
@@ -249,7 +248,11 @@ def rewrite():
     Rewrites ~/.menoa to default install
     """
 
-    shutil.rmtree(str(Path.home())+"/.menoa")
+    try:
+        shutil.rmtree(str(Path.home())+"/.menoa")
+    except:
+        pass
+    
     initialize_config()
 
 
