@@ -53,6 +53,7 @@ def combine_files(source_file, destination_file):
         print(f"Error: {e}")
 
 def progress_download(url, filename):
+    print("Downloading", url)
     
     r = requests.get(url, stream=True, allow_redirects=True)
     if r.status_code != 200:
@@ -80,11 +81,14 @@ def progress_patch_download(url, filename, current_version):
             url,
             json={'current_version': current_version}
         )
+        print(response.text)
         response.raise_for_status()
         #print(f"Response: {response.text}")
         urls = response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
+        raise Exception(f"Request failed: {e}")
+
+    print(response.text)
 
     try: urls = urls["urls"]
     except: raise Exception(f"Cannot reach {url}")
@@ -102,17 +106,37 @@ def progress_patch_download(url, filename, current_version):
 
     return new_version
 
+def download_icon():
+    """
+    Downloads an image from `url` and saves it to ~/.menoa/app_icon.png
+    """
+    
+    target = Path.home() / ".menoa" / "app_icon.png"
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    r = requests.get("https://menoa.org/static/images/logo.png", stream=True, timeout=15)
+    r.raise_for_status()
+
+    with open(target, "wb") as fh:
+        for chunk in r.iter_content(chunk_size=8192):
+            fh.write(chunk)
+
+    return target
+
 def initialize_desktop_file():
 
     if os.path.exists(str(Path.home())+"/.local/share/applications/menoa.desktop"):
         return
+
+    if not os.fileexists(str(Path.home())+"/.menoa/app_icon.png"):
+        download_icon()
     
     with open(str(Path.home())+"/.local/share/applications/menoa.desktop", "w") as file:
             file.write("""[Desktop Entry]
     Name=Menoa
     Comment=Antivirus and security center
     Exec=menoa-gui
-    Icon=menoa
+    Icon=~/.menoa/app_icon.png
     Terminal=false
     Type=Application
     Categories=Utility;Security;""")
@@ -123,29 +147,14 @@ def initialize_config():
     """
 
     home_path = str(Path.home())
+    config_path = home_path + "/.menoa/config.toml"
 
     if not os.path.exists(home_path + "/.menoa/"):
-        os.mkdir(home_path + '/.menoa')
+        os.mkdir(home_path + '/.menoa/')
 
-    if not os.path.exists(home_path + "/.menoa/feeds/"):
-        os.mkdir(home_path + '/.menoa/feeds')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
-        os.mkdir(home_path + '/.menoa/feeds/clam')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/network"):
-        os.mkdir(home_path + '/.menoa/feeds/network')
-
-    config_path = home_path + "/.menoa/config.toml"
+    if not os.path.exists(home_path + "/.menoa/clam_last_scanned/"):
+        with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
+            f.write("1970-01-01T00:00:00")
 
     default_string = """
     [clamav]
@@ -203,12 +212,59 @@ def initialize_config():
     description = "Menoa's malicious endpoint feed generated from open source feeds"
     local_path = "~/.menoa/feeds/network/main.csv"
     last_refreshed = 1970-01-01 00:00:00
-    supports_versioning = true
+    supports_versioning = false
     current_version = 1
     """
 
     with open(config_path, "w") as f:
         f.write(default_string)
+
+    if not os.path.exists(home_path + "/.menoa/feeds/"):
+        os.mkdir(home_path + '/.menoa/feeds')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
+        os.mkdir(home_path + '/.menoa/feeds/clam')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
+        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
+
+    if not os.path.exists(home_path + "/.menoa/feeds/network"):
+        os.mkdir(home_path + '/.menoa/feeds/network')
+
+    # Download all the default feeds
+    from menoa.utils.clam_utils import update_all_feeds as clam_update_all_feeds
+    clam_update_all_feeds()
+
+    from menoa.utils.network_utils import update_all_feeds as network_update_all_feeds
+    network_update_all_feeds()
+
+    # Symlink into quick/standard/deep
+    clam_path = home_path+"/.menoa/feeds/clam"
+
+    if not os.path.islink(clam_path + "/quick/daily.cvd"):
+        os.symlink(clam_path + "/daily.cvd", clam_path + "/quick/daily.cvd")
+    if not os.path.islink(clam_path + "/quick/bytecode.cvd"):
+        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/quick/bytecode.cvd")
+
+    if not os.path.islink(clam_path + "/standard/main.cvd"):
+        os.symlink(clam_path + "/main.cvd", clam_path + "/standard/main.cvd")
+    if not os.path.islink(clam_path + "/standard/daily.cvd"):
+        os.symlink(clam_path + "/daily.cvd", clam_path + "/standard/daily.cvd")
+    if not os.path.islink(clam_path + "/standard/bytecode.cvd"):
+        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/standard/bytecode.cvd")
+
+    if not os.path.islink(clam_path + "/deep/main.cvd"):
+        os.symlink(clam_path + "/main.cvd", clam_path + "/deep/main.cvd")
+    if not os.path.islink(clam_path + "/deep/daily.cvd"):
+        os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
+    if not os.path.islink(clam_path + "/deep/bytecode.cvd"):
+        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
 
 def get_enabled_tools():
     """
@@ -232,7 +288,11 @@ def rewrite():
     Rewrites ~/.menoa to default install
     """
 
-    shutil.rmtree(str(Path.home())+"/.menoa")
+    try:
+        shutil.rmtree(str(Path.home())+"/.menoa")
+    except:
+        pass
+
     initialize_config()
 
 

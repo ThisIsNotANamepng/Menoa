@@ -14,6 +14,13 @@ def load_remote_script(url) -> str:
     response.raise_for_status()
     return response.text
 
+def load_local_script(path: str) -> str:
+    """
+    Returns the text from a local file path
+    """
+    
+    with open(path, "r") as f:
+        return f.read()
 
 def parse_script(script_text: str) -> List[Dict[str, Any]]:
     """

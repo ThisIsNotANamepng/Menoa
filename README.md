@@ -48,7 +48,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Add a clock to have Menoa run in the background
 - [ ] Add feed management to the GUI
 
-### Other features:
+### Small changed:
 
 - [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
 - [ ] Should network monitoring include ipv6? Right now it doesn't

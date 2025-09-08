@@ -32,6 +32,7 @@ class ThreatEndpoints:
         return len(self.endpoints)
 
 def number_of_threats():
+    threat_endpoints = ThreatEndpoints()
     return(str(threat_endpoints.get_endpoint_count())+" Threats Tracked")
 
 def get_interface_summary():
@@ -110,24 +111,27 @@ def reload_endpoints():
 
     for i in paths:
         i = i.replace("~", str(Path.home()))
-        with open(i, mode='r', newline='') as file:
-            reader = csv.DictReader(file)
-            for row in reader:
+        try:
+            with open(i, mode='r', newline='') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
 
-                # Strip to just ip address
-                ip = row['url']
+                    # Strip to just ip address
+                    ip = row['url']
 
-                ip = ip.strip("http://").strip("https://")
+                    ip = ip.strip("http://").strip("https://")
 
-                if "/" in ip:
-                    ip = ip[:ip.index("/")]
+                    if "/" in ip:
+                        ip = ip[:ip.index("/")]
 
-                if ip.count(".") == 3 and not any(c.isalpha() for c in ip):
+                    if ip.count(".") == 3 and not any(c.isalpha() for c in ip):
 
-                    if ":" in ip:
-                        ip = ip[:ip.index(":")]
-                        
-                    threat_endpoints.append(ip)
+                        if ":" in ip:
+                            ip = ip[:ip.index(":")]
+                            
+                        threat_endpoints.append(ip)
+        except FileNotFoundError:
+            raise Exception(f"Your feed config references a local path ({i}) which doesn't exist")
     
     threat_endpoints = list(set(threat_endpoints))
 
@@ -136,6 +140,7 @@ def reload_endpoints():
 def connections_check(verbose=True, desktop_notification=False):
 
     connections = psutil.net_connections(kind="inet")
+    threat_endpoints = ThreatEndpoints()
     endpoints = threat_endpoints.get_endpoints()
 
     display_conn_list = ""
@@ -286,6 +291,5 @@ def toggle(status=None):
 
     if status is None: return not current
     else: return status
-
 
 #threat_endpoints = ThreatEndpoints()

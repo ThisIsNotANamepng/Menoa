@@ -171,7 +171,8 @@ def update_feed(index):
         raise Exception("Error: Feed does not exist")
 
     if feed["supports_versioning"]:
-        utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
+        new_version = utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
+        ##TODO: Add logic to update the current_version in the config file
     else:
         utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
 

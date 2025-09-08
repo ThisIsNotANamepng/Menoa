@@ -366,3 +366,47 @@ def toggle(status=None):
 
     if status is None: return not current
     else: return status
+
+def set_scanning_delay(seconds):
+    """
+    Sets the delay for scanning
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    config["attestation"]["scan_delay"] = seconds
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+def get_scanning_delay():
+    """
+    Returns the delay for scanning
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    return config["attestation"]["scan_delay"]
+
+def toggle(status=None):
+    """
+    Toggles scanning, reverses current status if nothing is passed
+    """
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    current = config["attestation"]["enabled"]
+
+    if status is None:
+        config["attestation"]["enabled"] = not current
+    else:
+        config["attestation"]["enabled"] = status
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+    if status is None: return not current
+    else: return status
