@@ -23,7 +23,11 @@ def get_number_of_binaries():
     """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM attestation")
+    try:
+        cursor.execute("SELECT COUNT(*) FROM attestation")
+    except sqlite3.OperationalError:
+        create_table()
+        cursor.execute("SELECT COUNT(*) FROM attestation")
     count = cursor.fetchone()[0]
     conn.close()
     return count
@@ -286,6 +290,7 @@ def create_table():
     Creates an SQLite3 database with a table 'attestation' containing
     columns 'path', 'date_checked', 'version', and 'hash' (all as TEXT).
     """
+    print("Creating attestation database...")
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()

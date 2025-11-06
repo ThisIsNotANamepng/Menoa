@@ -11,7 +11,23 @@ import tomli, tomli_w
 def get_model_version():
     # Loads the model and gets the embedded model version
 
-    return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
+    try:
+        return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
+    except:
+        downloadd_process_model()
+        return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
+
+def downloadd_process_model():
+    # Downloads the latest process model from the menoa servers
+    print("Model not found, downloading...")
+
+    import requests
+
+    url = "https://menoa-feeds.us-ord-1.linodeobjects.com/process%2Fprocess_analyses.pkl"
+    response = requests.get(url)
+
+    with open(str(Path.home())+"/.menoa/process_scanner.pkl", "wb") as f:
+        f.write(response.content)
 
 def get_process_threshold():
     """
@@ -113,7 +129,12 @@ def get_trun(pid):
 def predict(threshold: float=0.75):
 
     # Load the trained model
-    rf_classifier = joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl")
+    try:
+        rf_classifier = joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl")
+    except:
+        ## TODO: Handle this better
+        downloadd_process_model()
+
 
     # Columns: ['TRUN', 'TSLPI', 'TSLPU', 'POLI', 'NICE', 'PRI', 'RTPR', 'CPUNR', 'Status', 'State', 'CPU', 'CMD', 'label']
 

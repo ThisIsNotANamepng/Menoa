@@ -110,7 +110,7 @@ def download_icon():
     """
     Downloads an image from `url` and saves it to ~/.menoa/app_icon.png
     """
-    
+
     target = Path.home() / ".menoa" / "app_icon.png"
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,15 +146,12 @@ def initialize_config():
     For installs without a config, write a default one
     """
 
+    # = Config
     home_path = str(Path.home())
     config_path = home_path + "/.menoa/config.toml"
 
     if not os.path.exists(home_path + "/.menoa/"):
         os.mkdir(home_path + '/.menoa/')
-
-    if not os.path.exists(home_path + "/.menoa/clam_last_scanned/"):
-        with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
-            f.write("1970-01-01T00:00:00")
 
     default_string = """
     [clamav]
@@ -216,6 +213,7 @@ def initialize_config():
     current_version = 1
     """
 
+    # = Network and clam scanning
     with open(config_path, "w") as f:
         f.write(default_string)
 
@@ -265,6 +263,23 @@ def initialize_config():
         os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
     if not os.path.islink(clam_path + "/deep/bytecode.cvd"):
         os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
+
+    if not os.path.exists(home_path + "/.menoa/clam_last_scanned/"):
+        with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
+            f.write("1970-01-01T00:00:00")
+
+    # = Attestation
+    print("Checking attestation database...")
+    if not os.path.exists(home_path + "/.menoa/attestation.db"):
+        with open(home_path + '/.menoa/attestation.db', 'w') as f:
+            f.write("")
+
+        import utils.attestation_utils as attestation_utils
+        print("Creating attestation database...")
+        attestation_utils.create_table()
+    else:
+        print("Attestation database already exists")
+
 
 def get_enabled_tools():
     """

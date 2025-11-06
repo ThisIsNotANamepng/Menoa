@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetIte
 from PySide6.QtGui import QDesktopServices, QCursor, QFont, QLinearGradient, QColor, QBrush, QIcon, QPalette
 from PySide6.QtCore import QUrl, QEvent
 import importlib.resources as pkg_resources
+from pathlib import Path
 
 from menoa.pages.network_page import NetworkPage
 from menoa.pages.clam_page import ClamPage
@@ -200,7 +201,7 @@ class MainWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Menoa")
-        self.setWindowIcon(QIcon("/home/jack/code/Menoa/menoa/notification_icon.png"))
+        self.setWindowIcon(QIcon(str(Path.home()) + "/notification_icon.png"))
 
         #self.setMinimumSize(1000, 700)
 

@@ -45,10 +45,10 @@ Menoa is made specifically for Linux, and it follows the very important principl
 
 ### Big changes:
 
-- [ ] Add a clock to have Menoa run in the background
+- [ ] Add a clock to have Menoa run in the background (probably with systemd)
 - [ ] Add feed management to the GUI
 
-### Small changed:
+### Small changes:
 
 - [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
 - [ ] Should network monitoring include ipv6? Right now it doesn't
@@ -72,5 +72,6 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Add util to completely redonwload feeds, getting rid of past feed signatures
 - [ ] Process scanning returns processes above the threshold as beningn, but only some
 - [ ] Add a status option for cli tools to see whether background work is on or off
+- [ ] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
 
 Written by [Jack Hagen](https://hagen.rip)
