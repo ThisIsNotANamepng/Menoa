@@ -1,6 +1,6 @@
 import sys
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Signal
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QSizePolicy, QScrollArea, QToolButton
+from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QSizePolicy, QScrollArea, QToolButton, QDialog, QDialogButtonBox, QPushButton, QTextEdit
 from PySide6.QtGui import QDesktopServices, QCursor, QFont, QLinearGradient, QColor, QBrush, QIcon, QPalette
 from PySide6.QtCore import QUrl, QEvent
 import importlib.resources as pkg_resources
@@ -13,11 +13,51 @@ from menoa.pages.process_page import ProcessPage, PredictionEngine
 from menoa.pages.script_page import ScriptPage
 from menoa.utils.utils import get_enabled_tools
 
+# Fixed width for dashboard cards (pixels). Adjust this value if you change the
+# application minimum width or the number of columns in the grid.
+CARD_FIXED_WIDTH = 360
+
+
+class LearnMoreDialog(QDialog):
+    """Simple modal dialog that shows a title and a read-only, scrollable description."""
+    def __init__(self, title: str, content: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"About {title}")
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        title_label = QLabel(f"<b>{title}</b>")
+        title_label.setObjectName("dashboard_label")
+        layout.addWidget(title_label)
+
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(content or "")
+        text.setMinimumSize(480, 260)
+        layout.addWidget(text)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        # Close button mapping
+        close_button = buttons.button(QDialogButtonBox.Close)
+        if close_button:
+            close_button.setText("Close")
+        layout.addWidget(buttons)
+
+
 class DashboardCard(QFrame):
     cardClicked = Signal()
     def __init__(self, title, short_desc, long_desc, link):
         super().__init__()
+        # store fields for the learn dialog
         self.link = link
+        self.title = title
+        # keep both short (dashboard) and long (popup) descriptions
+        self.short_desc = short_desc
+        self.long_desc = long_desc
+        # Make each card the same fixed width so the grid looks uniform
+        self.setFixedWidth(CARD_FIXED_WIDTH)
         self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self.setLineWidth(1)
         self.setObjectName("dashboardCard")
@@ -41,7 +81,7 @@ class DashboardCard(QFrame):
         status_color = "#4CAF50" if status else "#F44336"
 
         # The attestation tool doesn't work in the background, it can't be enabled or disabled
-        if title == "Command":
+        if title == "Command Predictor (beta)":
             status_text = ""
 
         status_label = QLabel(status_text)
@@ -60,7 +100,8 @@ class DashboardCard(QFrame):
         content_layout.setContentsMargins(15, 10, 15, 15)
         content_layout.setSpacing(8)
 
-        desc_label = QLabel(long_desc)
+        # show the short description on the dashboard card
+        desc_label = QLabel(short_desc)
         desc_label.setWordWrap(True)
         desc_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -72,7 +113,8 @@ class DashboardCard(QFrame):
         learn_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         learn_btn.setIconSize(QSize(16, 16))
         learn_btn.setIcon(QIcon.fromTheme("go-next"))
-        learn_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.link)))
+        # Open a native dialog with information instead of launching the browser
+        learn_btn.clicked.connect(self.open_learn_dialog)
 
         content_layout.addWidget(desc_label)
         content_layout.addStretch()
@@ -86,6 +128,7 @@ class DashboardCard(QFrame):
         main_layout.addWidget(content)
 
     def get_tool_status(self, tool_name: str) -> bool:
+        ## TODO: This isn't great, the list of enabled tools is generated each time this is called, which is for each card
         return tool_name in get_enabled_tools()
 
     def mousePressEvent(self, event):
@@ -95,6 +138,11 @@ class DashboardCard(QFrame):
             event.accept()
         else:
             super().mousePressEvent(event)
+
+    def open_learn_dialog(self):
+        """Show a native modal dialog with the card's long description."""
+        dlg = LearnMoreDialog(self.title, self.long_desc, parent=self)
+        dlg.exec()
 
 class DashboardPage(QWidget):
     pageRequested = Signal(int) # Page navigation signal
@@ -172,11 +220,36 @@ class DashboardPage(QWidget):
         scroll_area = QScrollArea()
 
         tools = [
-            ("Clam", "", "Frontend for ClamAV, an open source malware scanner", "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#clam"),
-            ("Network", "", "Checks network connections against known malicious endpoints", "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#network-scanner"),
-            ("Process", "", "Classifies system processes using machine learning", "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#process"),
-            ("Attestation", "", "Validates system binaries against known good hashes", "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#attestation"),
-            ("Command", "", "Parses Bash scripts to predict system impact", "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#command")
+            (
+                "ClamAV Scanner",
+                "Malware scanner",
+                "A GUI front end for scanning files and directories for malware with ClamAV. Use it to scan files for malware.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#clam",
+            ),
+            (
+                "Endpoint Scanner",
+                "Endpoint connection scanning",
+                "Compares active connections against known malicious endpoints.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#network-scanner",
+            ),
+            (
+                "Process Scanner (beta)",
+                "Process classifier",
+                "Gathers information about current processes and classifies them as benign or malicious. Still in beta.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#process",
+            ),
+            (
+                "Attestation",
+                "Binary attestation",
+                "Compares the hashes of local binaries in /bin against a list of correct hashes for Linux binaries.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#attestation",
+            ),
+            (
+                "Command Predictor (beta)",
+                "Bash parser and predictor",
+                "Parses a given bash script and predicts in simple language what the outcome will be. Originally meant for install.sh scripts.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#command",
+            ),
         ]
 
         # Create cards

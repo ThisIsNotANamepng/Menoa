@@ -291,10 +291,13 @@ def get_enabled_tools():
 
     enabled = []
 
-    if config["clamav"]["enabled"]: enabled.append("clam")
-    if config["network"]["enabled"]: enabled.append("network")
-    if config["process"]["enabled"]: enabled.append("process")
+    print("CLAMV status:", config["clamav"]["enabled"])
+
+    if config["clamav"]["enabled"]: enabled.append("clamav scanner")
+    if config["network"]["enabled"]: enabled.append("endpoint scanner")
+    if config["process"]["enabled"]: enabled.append("process scanner (beta)")
     if config["attestation"]["enabled"]: enabled.append("attestation")
+    print(enabled)
 
     return enabled
 

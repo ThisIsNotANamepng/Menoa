@@ -14,12 +14,12 @@ def get_model_version():
     try:
         return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
     except:
-        downloadd_process_model()
+        download_process_model()
         return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
 
-def downloadd_process_model():
+def download_process_model():
     # Downloads the latest process model from the menoa servers
-    print("Model not found, downloading...")
+    print("Process model not found, downloading...")
 
     import requests
 
@@ -133,7 +133,7 @@ def predict(threshold: float=0.75):
         rf_classifier = joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl")
     except:
         ## TODO: Handle this better
-        downloadd_process_model()
+        download_process_model()
 
 
     # Columns: ['TRUN', 'TSLPI', 'TSLPU', 'POLI', 'NICE', 'PRI', 'RTPR', 'CPUNR', 'Status', 'State', 'CPU', 'CMD', 'label']

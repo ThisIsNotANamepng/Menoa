@@ -58,7 +58,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
 - [ ] In GUI be able to stop a scan mid scan without having to close the window
-- [ ] Any malware that tampers with a binary could also change its hash value in the database, add a method of signing the hashes received from the api with a key from Menoa
+- [ ] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa
 - [ ] Change the load template button on the command page be a button that pops up an input box for you to put a link to a bash file, it downloads and analyzes (meant for install.sh files)
 - [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
 - [ ] Add comments, clean up code
@@ -73,5 +73,11 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Process scanning returns processes above the threshold as beningn, but only some
 - [ ] Add a status option for cli tools to see whether background work is on or off
 - [ ] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
+- [ ] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
+- [ ] Make opening the gui faster
+- [ ] Across all tools, make all options available with the cli also available in the gui
+- [ ] Attestation versioning isn't working
+- [ ] Set up attestation api
+- [ ] Write more info for learn more buttons on the dashboard
 
 Written by [Jack Hagen](https://hagen.rip)

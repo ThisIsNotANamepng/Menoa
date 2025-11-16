@@ -2,7 +2,9 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushBu
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 
-from menoa.utils.network_utils import number_of_threats, get_interface_summary, get_realtime_logs, reload_endpoints, get_feed_summary
+from menoa.utils import network_utils
+from menoa.utils.network_utils import number_of_threats, get_interface_summary, reload_endpoints, get_feed_summary
+from concurrent.futures import ProcessPoolExecutor
 
 class NetworkPage(QWidget):
     def __init__(self):
@@ -48,6 +50,13 @@ class NetworkPage(QWidget):
         self.timer.timeout.connect(self.update_logs)
         self.timer.start(1000)
 
+        # Process executor for blocking network scans. We use a single-worker
+        # ProcessPoolExecutor so heavy work runs in a separate process and
+        # doesn't freeze the GUI. We poll the future from the Qt timer and
+        # update the widgets when the result is ready.
+        self.executor = ProcessPoolExecutor(max_workers=1)
+        self._future = None
+
         # --- Layout ---
         left_layout = QVBoxLayout()
         left_layout.setSpacing(10)
@@ -69,15 +78,49 @@ class NetworkPage(QWidget):
         QTimer.singleShot(1000, lambda: self.refresh_button.setText("↻ Refresh"))
 
     def update_logs(self):
-        # Format logs with fixed column spacing (example implementation)
-        logs = get_realtime_logs()
-        formatted_logs = []
-        formatted_logs.append("PID   Remote address")
+        # Submit a background process if none is running. If one is running,
+        # poll it and update UI when it's finished. This prevents overlapping
+        # scans and keeps the GUI responsive.
+        if self._future is None:
+            # Submit the process task. Use the module-level function so it
+            # can be pickled by the ProcessPoolExecutor.
+            try:
+                self._future = self.executor.submit(network_utils.connections_check)
+            except Exception as e:
+                # If submission fails, show the error in the log box.
+                self.log_box.setText(f"Error starting background scan: {e}")
+                self._future = None
+            return
 
-        for line in logs.split('\n'):
-            formatted_logs.append(line)
+        # If a future exists, check if it's done and update the UI with the
+        # returned logs. We call result only when done() is True so this is
+        # non-blocking.
+        if self._future.done():
+            try:
+                logs = self._future.result()
+            except Exception as e:
+                logs = f"Error in background scan: {e}"
 
-        self.log_box.setText('\n'.join(formatted_logs))
+            formatted_logs = []
+            formatted_logs.append("PID   Remote address")
+            for line in str(logs).split('\n'):
+                formatted_logs.append(line)
+
+            self.log_box.setText('\n'.join(formatted_logs))
+            # Clear future so next timeout will start a new run
+            self._future = None
+
+
+    def closeEvent(self, event):
+        """Ensure background executor is shutdown when the widget closes."""
+        try:
+            self.timer.stop()
+            if hasattr(self, 'executor') and self.executor:
+                # Shutdown without waiting for long-running child process to finish
+                self.executor.shutdown(wait=False)
+        except Exception:
+            pass
+        return super().closeEvent(event)
 
 
 
