@@ -204,13 +204,11 @@ def initialize_config():
     current_version = 1
 
     [network_feeds.main]
-    url = "http://127.0.0.1:5000/feeds/network/main.csv"
+    format = "plain"
+    url = "https://menoa-feeds.us-ord-1.linodeobjects.com/network/main.txt"
     name = "Default Menoa network feed"
     description = "Menoa's malicious endpoint feed generated from open source feeds"
-    local_path = "~/.menoa/feeds/network/main.csv"
     last_refreshed = 1970-01-01 00:00:00
-    supports_versioning = false
-    current_version = 1
     """
 
     # = Network and clam scanning

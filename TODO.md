@@ -1,0 +1,56 @@
+# Bug fix TODO
+
+Ordered by priority. Work top to bottom, one at a time.
+
+## Critical
+
+- [ ] **1. `menoa init` fails on a fresh machine**
+  - [ ] `os.fileexists` doesn't exist ([utils.py:131](menoa/utils/utils.py#L131))
+  - [x] Default network feed URL pointed at `127.0.0.1:5000`; now `plain` format at the Linode bucket, and one failing feed no longer stops `init`
+  - [ ] Upload `network/main.txt` to the bucket (currently 403); clam default URLs in config are unused placeholders
+  - [ ] `import utils.attestation_utils` breaks in the installed package ([utils.py:277](menoa/utils/utils.py#L277))
+  - [ ] GUI doesn't initialize on its own; README install steps don't mention `menoa init`
+- [ ] **2. Failed scan reports "No malware found!"**: check clamscan's exit code and surface error lines ([clam_utils.py:86-91](menoa/utils/clam_utils.py#L86-L91), [cli.py:95](menoa/cli.py#L95), GUI "Completed!")
+- [ ] **3. Attestation logic is inverted**
+  - [ ] Server statuses are discarded for sent binaries, and unmentioned ones are marked Validated ([attestation_utils.py:254-274](menoa/utils/attestation_utils.py#L254-L274))
+  - [ ] Validated rows are never rechecked (`WHERE validated != 1`, [line 238](menoa/utils/attestation_utils.py#L238))
+  - [ ] Local tamper detection only prints ([line 173](menoa/utils/attestation_utils.py#L173))
+- [ ] **4. Process scanner puts results on the wrong PID**
+  - [ ] `pids = ["padding"]` off-by-one, plus processes skipped after `pids.append` ([process_utils.py:142-151](menoa/utils/process_utils.py#L142-L151))
+  - [ ] `LabelEncoder` re-fit on live data each scan ([line 195](menoa/utils/process_utils.py#L195))
+  - [ ] First `cpu_percent` reading is always 0.0
+
+## High
+
+- [ ] **5. GUI progress hits 100% at about 53%**: `else` branch double-counts; summary lines are counted as files ([clam_page.py:31-35](menoa/pages/clam_page.py#L31-L35))
+- [ ] **6. `delete_binary` binds `(path)`, not `(path,)`**: error is swallowed and `update_database` aborts ([attestation_utils.py:337](menoa/utils/attestation_utils.py#L337))
+- [ ] **7. `get_package_version` only supports pacman**: returns `None` on apt/dnf, a dict when no manager is found ([attestation_utils.py:113-150](menoa/utils/attestation_utils.py#L113-L150))
+- [ ] **8. Custom clam feeds are never used in scans**; `utils` import is commented out ([clam_utils.py:10](menoa/utils/clam_utils.py#L10), [174](menoa/utils/clam_utils.py#L174), [228](menoa/utils/clam_utils.py#L228))
+- [ ] **9. `menoa init` always overwrites `config.toml`** ([utils.py:217](menoa/utils/utils.py#L217))
+- [ ] **10. `cli.py` is a SyntaxError on Python 3.11**: nested same-quote f-strings ([cli.py:229](menoa/cli.py#L229), 231, 360, 362)
+- [ ] **11. GUI won't open without clamscan or a system DB**; it also shows the system DB version, not Menoa's ([clam_utils.py:96](menoa/utils/clam_utils.py#L96), [109](menoa/utils/clam_utils.py#L109))
+- [ ] **12. Full scan of `/` walks `/proc`, `/sys`, `/dev`** (clamscan call and `get_scan_total`)
+
+## Medium
+
+- [ ] **13. Dashboard**: cards don't navigate (`page_map` keys vs titles); Attestation card always shows Disabled ([main.py:106](menoa/main.py#L106), [238-292](menoa/main.py#L238-L292))
+- [ ] **14. `shell explain`**: crashes on a bare line ([cli.py:560-563](menoa/cli.py#L560-L563)); misses combined flags (`-rf`, `-xzf`), `sudo`, and pipes (`curl | bash`) ([script_utils.py](menoa/utils/script_utils.py))
+- [ ] **15. `predict` crashes**: model downloaded but never loaded; `ProcessLookupError` not caught ([process_utils.py:133-154](menoa/utils/process_utils.py#L133-L154))
+- [ ] **16. Model download**: no status check; `joblib.load` of an unverified download (pin a sha256) ([process_utils.py:20-30](menoa/utils/process_utils.py#L20-L30))
+- [ ] **17. `menoa process scan` ignores the configured threshold** (0.75 vs config 0.7 vs GUI 0.6) ([cli.py:405](menoa/cli.py#L405))
+- [ ] **18. Hard-coded `/home/jack` icon paths**; `.desktop` uses unexpanded `~` ([utils.py:25](menoa/utils/utils.py#L25), [main.py:304](menoa/main.py#L304), [352](menoa/main.py#L352))
+- [ ] **19. Versioned feeds**: network feeds fixed (versioning removed, pluggable formats). Clam still uses `progress_patch_download`: `current_version` never saved, patches re-append forever, `add_feed` omits `current_version` ([utils.py:75-107](menoa/utils/utils.py#L75-L107))
+- [ ] **20. Network page**: fake interface summary ([network_utils.py](menoa/utils/network_utils.py)). Fixed: set lookup, normalized cache files, consistent threat counts
+- [ ] **21. "Check System Binaries" blocks the GUI thread**; POST has no timeout; table not refreshed ([attestation_page.py:20](menoa/pages/attestation_page.py#L20))
+
+## Low
+
+- [ ] `clam_last_scanned/` check has a trailing slash, so the timestamp resets every init ([utils.py:267](menoa/utils/utils.py#L267))
+- [ ] `clock.py` broken `utils.` import, runs at import time, bare `except` ([clock.py:3](menoa/clock.py#L3))
+- [ ] `main.py` prints import timings on every launch
+- [ ] `if not seconds`: a delay or threshold of 0 can't be set (CLI)
+- [ ] Wrong CLI help text (process/attestation `toggle` say "network"; `attestation delay` says "Process")
+- [ ] `combine_files` swallows errors; fixed `/tmp` download filename
+- [ ] Dead code: duplicate `toggle`, `attest_with_server` uses undefined `data`
+- [ ] `build/lib/` is tracked in git despite `.gitignore`
+- [ ] `setup.py`: `==` pins in `install_requires`; placeholder `author_email`/`url`

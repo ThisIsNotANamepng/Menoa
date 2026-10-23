@@ -13,7 +13,12 @@ import psutil, csv, time
 import menoa.utils.utils as utils
 from pathlib import Path
 import tomli, tomli_w
-import shutil
+import io, os, re, shlex, subprocess, ipaddress
+from datetime import datetime
+from urllib.parse import urlparse
+import requests
+
+FEED_FORMATS = ("plain", "csv", "misp", "command")
 
 class ThreatEndpoints:
     def __init__(self):
@@ -38,16 +43,19 @@ def number_of_threats():
 def get_interface_summary():
     return "Interface Summary:\n - eth0: UP\n - wlan0: DOWN"
 
-def get_number_of_threats_from_feed(filepath):
-    # Takes a threat feed csv and returns the number of threats tracked in it
+def feed_cache_path(index):
+    # Every feed, whatever its format, is stored locally as one normalized IP per line
+    return Path.home() / ".menoa" / "feeds" / "network" / f"{index}.txt"
 
-    filepath = filepath.replace("~", str(Path.home()))
-    with open(filepath, "r") as f:
-        count = 0
-        for line in f:
-            count += 1
+def get_number_of_threats_from_feed(index):
+    # Returns the number of IPs stored for a feed, or None if it hasn't been downloaded
 
-    return count
+    path = feed_cache_path(index)
+    if not path.exists():
+        return None
+
+    with open(path, "r") as f:
+        return sum(1 for line in f if line.strip())
 
 def get_feed_summary():
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -55,11 +63,9 @@ def get_feed_summary():
 
     summary = "\n\nNetwork Feeds Summary:\n"
 
-    print()
     for i in config["network_feeds"]:
-        summary += " - "+i
-        #summary += " - "+str(config["network_feeds"][i]["last_refreshed"])+"\n"
-        summary += ": "+str(get_number_of_threats_from_feed(config["network_feeds"][i]["local_path"]))+" threats"+"\n"
+        count = get_number_of_threats_from_feed(i)
+        summary += f" - {i}: " + ("not downloaded" if count is None else f"{count} threats") + "\n"
 
     return summary
 
@@ -72,68 +78,145 @@ def update_all_feeds():
 
     toml_dict = tomli.loads(config)
 
+    # One broken feed shouldn't stop the others from updating
     for i in toml_dict['network_feeds'].keys():
-        update_feed(i)
+        try:
+            print(f"{i}: {update_feed(i)} IPs")
+        except Exception as e:
+            print(f"Failed to update {i}, keeping previous data: {e}")
+
+def read_source(url):
+    # Returns the text at a url, or at a local path ("/..." or "file://...")
+
+    if url.startswith("file://"):
+        url = url[len("file://"):]
+    if url.startswith("/"):
+        with open(url, "r") as f:
+            return f.read()
+
+    r = requests.get(url, timeout=60)
+    r.raise_for_status()
+    return r.text
+
+def fetch_feed_values(feed):
+    """
+    Downloads a feed and returns its raw values (one candidate indicator per item), based on feed["format"]:
+
+    - plain: one indicator per line, "#" starts a comment
+    - csv: the value in `column`, a header name or a 0-based column number
+    - misp: ip-src/ip-dst attributes from a MISP server's restSearch, using the API key in the env var `api_key_env`
+    - command: one indicator per line printed by `command`
+    """
+
+    fmt = feed.get("format")
+
+    if fmt == "plain":
+        return read_source(feed["url"]).splitlines()
+
+    if fmt == "csv":
+        lines = [l for l in read_source(feed["url"]).splitlines() if not l.startswith("#")]
+        column = feed["column"]
+        if isinstance(column, int):
+            return [row[column] for row in csv.reader(lines) if len(row) > column]
+        return [row.get(column) or "" for row in csv.DictReader(lines)]
+
+    if fmt == "misp":
+        key = os.environ.get(feed["api_key_env"])
+        if not key:
+            raise Exception(f"Set the {feed['api_key_env']} environment variable to your MISP API key")
+
+        r = requests.post(
+            feed["url"].rstrip("/") + "/attributes/restSearch",
+            headers={"Authorization": key, "Accept": "application/json", "Content-Type": "application/json"},
+            # enforceWarninglist drops known-benign IPs (public DNS, CDNs) that would cause false alarms
+            json={"returnFormat": "text", "type": ["ip-src", "ip-dst"], "to_ids": True, "enforceWarninglist": True},
+            timeout=120,
+        )
+        r.raise_for_status()
+        return r.text.splitlines()
+
+    if fmt == "command":
+        result = subprocess.run(shlex.split(feed["command"]), capture_output=True, text=True, check=True, timeout=300)
+        return result.stdout.splitlines()
+
+    raise Exception(f"Unknown feed format {fmt!r}, must be one of {', '.join(FEED_FORMATS)}")
+
+def normalize_indicators(values):
+    """
+    Turns raw feed values into a set of IP strings. Feeds are untrusted input, so anything that isn't an IP is dropped
+    Accepts bare IPs and URLs with an IP host ("http://1.2.3.4:8080/x"), text after the first space or "#" is ignored
+    """
+
+    ips = set()
+
+    for value in values:
+        value = value.split("#")[0].strip()
+        if not value:
+            continue
+        value = value.split()[0]
+
+        host = urlparse(value).hostname if "://" in value else value
+        try:
+            ip = ipaddress.ip_address(host)
+        except (ValueError, TypeError):
+            continue
+
+        # These would match local traffic on every machine, flagging everything
+        if ip.is_unspecified or ip.is_loopback or ip.is_multicast:
+            continue
+
+        ips.add(str(ip))
+
+    return ips
 
 def update_feed(index):
     """
-    Updates a feed using the given index
+    Downloads a feed using the given index, stores its IPs in the feed's cache file, and returns how many were found
     """
-
-    with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
-        config = file.read()
-
-    toml_dict = tomli.loads(config)
-
-    try:
-        feed = (toml_dict["network_feeds"][index])
-    except KeyError:
-        raise Exception("Error: Feed does not exist")
-
-    if feed["supports_versioning"]:
-        utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
-    else:
-        utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
-
-def reload_endpoints():
-    # Returns a list of the endpoints retreived from network feeds
-    #print("Reloading...")
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
-    paths = []
+    try:
+        feed = config["network_feeds"][index]
+    except KeyError:
+        raise Exception("Error: Feed does not exist")
+
+    ips = normalize_indicators(fetch_feed_values(feed))
+
+    # An empty result is almost always a misconfigured feed, don't wipe the good data from last time
+    if not ips:
+        raise Exception(f"No valid IPs found in {index}, keeping previous data")
+
+    # Write then rename so a crash mid-write can't leave a truncated feed
+    path = feed_cache_path(index)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(sorted(ips)) + "\n")
+    os.replace(tmp, path)
+
+    config["network_feeds"][index]["last_refreshed"] = datetime.now().replace(microsecond=0)
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
+
+    return len(ips)
+
+def reload_endpoints():
+    # Returns a set of the IPs from all downloaded network feeds
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    threat_endpoints = set()
 
     for i in config["network_feeds"]:
-        paths.append(config["network_feeds"][i]["local_path"])
+        path = feed_cache_path(i)
+        if not path.exists():
+            print(f"Network feed {i} hasn't been downloaded yet, run `menoa network reload {i}`")
+            continue
 
-    threat_endpoints = []
-
-    for i in paths:
-        i = i.replace("~", str(Path.home()))
-        try:
-            with open(i, mode='r', newline='') as file:
-                reader = csv.DictReader(file)
-                for row in reader:
-
-                    # Strip to just ip address
-                    ip = row['url']
-
-                    ip = ip.strip("http://").strip("https://")
-
-                    if "/" in ip:
-                        ip = ip[:ip.index("/")]
-
-                    if ip.count(".") == 3 and not any(c.isalpha() for c in ip):
-
-                        if ":" in ip:
-                            ip = ip[:ip.index(":")]
-                            
-                        threat_endpoints.append(ip)
-        except FileNotFoundError:
-            raise Exception(f"Your feed config references a local path ({i}) which doesn't exist")
-    
-    threat_endpoints = list(set(threat_endpoints))
+        with open(path, "r") as f:
+            threat_endpoints.update(line.strip() for line in f if line.strip())
 
     return threat_endpoints
 
@@ -146,10 +229,12 @@ def connections_check(verbose=True, desktop_notification=False):
     display_conn_list = ""
 
     for conn in connections:
-        #print(conn)
         # Go through connections, check each one to see if it's in the threat list
 
-        if conn.raddr and conn.raddr.ip in endpoints:
+        # Dual-stack sockets report IPv4 peers as ::ffff:1.2.3.4
+        remote_ip = conn.raddr.ip.removeprefix("::ffff:") if conn.raddr else None
+
+        if remote_ip in endpoints:
             pid = conn.pid
 
             if verbose:
@@ -179,31 +264,35 @@ def connections_check(verbose=True, desktop_notification=False):
 
     return display_conn_list
 
-def add_feed(index, name, url, description, local_path, supports_versioning=False, move_into_default_feed_path=True):
+def add_feed(index, name, description, format, url=None, column=None, command=None, api_key_env=None):
     """
-    Adds a network feed from the config
-    if `move_into_default_feed_path` is True Menoa will try to copy the given filepath into `~/.menoa/feeds/network/xxxx``
+    Adds a network feed to the config, see fetch_feed_values() for what each format needs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
+    # The index is used as the cache filename
+    if not re.fullmatch(r"[\w-]+", index):
+        raise Exception("Feed index can only contain letters, numbers, _ and -")
+
     if index in config["network_feeds"].keys():
-        raise Exception("Error: Feed with index", index, "already exists. This identifier must be unique")
+        raise Exception(f"Error: Feed with index {index} already exists. This identifier must be unique")
 
-    if move_into_default_feed_path: # Copy filepath into local feed storage
-        new_path = str(Path.home())+"/.menoa/feeds/network/"+Path(local_path).name
-        shutil.copy2(local_path, new_path)
-        local_path = new_path
+    if format not in FEED_FORMATS:
+        raise Exception(f"Unknown feed format {format!r}, must be one of {', '.join(FEED_FORMATS)}")
 
-    config["network_feeds"][index] = {
-        "url": url,
-        "name": name,
-        "description": description,
-        "local_path": local_path,
-        "last_refreshed": "1970-01-01T00:00:00",
-        "supports_versioning": supports_versioning
-    }
+    required = {"plain": ["url"], "csv": ["url", "column"], "misp": ["url", "api_key_env"], "command": ["command"]}[format]
+    fields = {"url": url, "column": column, "command": command, "api_key_env": api_key_env}
+    missing = [f for f in required if fields[f] is None]
+    if missing:
+        raise Exception(f"A {format} feed needs: {', '.join(missing)}")
+
+    feed = {"name": name, "description": description, "format": format, "last_refreshed": datetime(1970, 1, 1)}
+    for f in required:
+        feed[f] = fields[f]
+
+    config["network_feeds"][index] = feed
 
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
@@ -223,6 +312,8 @@ def remove_feed(index):
 
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
+
+    feed_cache_path(index).unlink(missing_ok=True)
 
 def list_feeds():
     """

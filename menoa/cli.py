@@ -293,20 +293,29 @@ def network_reload_feed(feed=False):
 @network.command(name="add")
 @click.option('--index', type=str, required=True)
 @click.option('--name', type=str, required=True)
-@click.option('--url', type=str, required=True)
 @click.option('--description', type=str, required=True)
-@click.option('--local-path', type=str, required=True)
-@click.option('--supports-versioning', is_flag=True, default=False)
-@click.option('--centralize', is_flag=True, default=False)
-def network_add_feed(index, name, url, description, local_path, supports_versioning, centralize):
+@click.option('--format', 'feed_format', type=click.Choice(["plain", "csv", "misp", "command"]), required=True)
+@click.option('--url', type=str, help="Feed url or local path (plain, csv, misp)")
+@click.option('--column', type=str, help="Header name or 0-based column number holding the IP/URL (csv)")
+@click.option('--command', type=str, help="Command that prints one indicator per line (command)")
+@click.option('--api-key-env', type=str, help="Environment variable holding the API key (misp)")
+def network_add_feed(index, name, description, feed_format, url, column, command, api_key_env):
     """
-    Add a new network feed from a local file or remote url
+    Add a new network feed and download it
     """
     import menoa.utils.network_utils as network_utils
-    
-    console.print(f"[yellow]Adding network feed: {url}...[/yellow]")
-    network_utils.add_feed(index, name, url, description, local_path, supports_versioning, centralize)
+
+    if column is not None and column.isdigit():
+        column = int(column)
+
+    network_utils.add_feed(index, name, description, feed_format, url, column, command, api_key_env)
     console.print(f"[green]Added {name}![/green]")
+
+    console.print(f"[yellow]Downloading {index}...[/yellow]")
+    try:
+        console.print(f"[green]{network_utils.update_feed(index)} IPs loaded[/green]")
+    except Exception as e:
+        console.print(f"[red]Download failed: {e}[/red]")
 
 @network.command(name="remove")
 @click.argument('index', type=str, required=True)
@@ -334,15 +343,15 @@ def network_list_feeds():
     table.add_column("Index", justify="right", style="cyan", no_wrap=True)
     table.add_column("Name", style="magenta")
     table.add_column("Description", style="magenta")
-    table.add_column("Upstream URL", style="magenta")
-    table.add_column("Local Storage", style="magenta")
+    table.add_column("Format", style="magenta")
+    table.add_column("Source", style="magenta")
     table.add_column("Last Refreshed", style="magenta")
-    table.add_column("Upstream Supports Versioning", style="magenta")
 
     feeds = network_utils.list_feeds()
 
     for i in feeds:
-        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]), str(feeds[i]["supports_versioning"]))
+        f = feeds[i]
+        table.add_row(i, f.get("name", ""), f.get("description", ""), str(f.get("format")), f.get("url") or f.get("command", ""), str(f.get("last_refreshed")))
 
     console.print(table)
     console.print("[green]Showing feeds[/green]")

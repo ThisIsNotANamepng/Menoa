@@ -19,6 +19,28 @@ It is made up of five main tools,
 
 \* The threat intelligence are driven by feeds provided by open source feeds collated by Menoa
 
+## Network Threat Feeds
+
+Menoa's default feed is just one source, you can add or replace feeds with anything that serves IP addresses. Each feed in `~/.menoa/config.toml` has a `format`:
+
+| Format | Needs | Source |
+|---|---|---|
+| `plain` | `url` | One IP (or URL with an IP host) per line, `#` starts a comment. Any static file host works |
+| `csv` | `url`, `column` | A CSV, `column` is a header name or a 0-based column number |
+| `misp` | `url`, `api_key_env` | A [MISP](https://www.misp-project.org/) server, Menoa pulls `ip-src`/`ip-dst` attributes marked for IDS from published events, minus anything on enabled warninglists |
+| `command` | `command` | Any command that prints one indicator per line, for TAXII, vendor APIs, or your own scripts |
+
+`url` can also be a local path. Values that aren't valid IPs are dropped.
+
+```
+menoa network add --index mine --name "My feed" --description "Internal blocklist" --format plain --url https://example.org/ips.txt
+menoa network add --index corp --name "Corp MISP" --description "Our MISP" --format misp --url https://misp.corp.example --api-key-env MENOA_MISP_KEY
+menoa network add --index feodo --name "Feodo Tracker" --description "abuse.ch botnet C2 IPs" --format csv --url https://feodotracker.abuse.ch/downloads/ipblocklist.csv --column dst_ip
+menoa network reload
+```
+
+To write your own server, serve a `plain` file.
+
 ## Software Principles
 
 Menoa is made specifically for Linux, and it follows the very important principles of the OS that users demand
@@ -70,7 +92,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 - [ ] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan
 - [ ] Add option to do different types of scans in the GUI
-- [ ] Add util to completely redonwload feeds, getting rid of past feed signatures
+- [ ] Add util to completely redownload feeds, getting rid of past feed signatures
 - [ ] Process scanning returns processes above the threshold as beningn, but only some
 - [ ] Add a status option for cli tools to see whether background work is on or off
 - [ ] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
