@@ -37,7 +37,13 @@ class ProcessPage(QWidget):
         top_layout = QHBoxLayout()
 
         # Model version label
-        self.version_label = QLabel(f"Model version: {get_model_version()}")
+        # A missing model shouldn't stop the whole GUI from opening
+        try:
+            model_version = get_model_version()
+        except Exception as e:
+            print(f"Process model unavailable: {e}")
+            model_version = "unavailable"
+        self.version_label = QLabel(f"Model version: {model_version}")
         top_layout.addWidget(self.version_label)
 
         # Threshold input

@@ -576,7 +576,11 @@ def shell_interpret_source(source):
 @cli.command()
 def init():
     """If stuff in .menoa doesn't exist, create it"""
-    initialize()
+    failures = initialize()
+    if failures:
+        console.print("[red]Some setup steps failed, run `menoa init` to retry:[/red]\n" + "\n".join(failures))
+        sys.exit(1)
+    console.print("[green]Menoa is set up[/green]")
 
 @cli.command()
 def fix():

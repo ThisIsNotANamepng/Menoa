@@ -78,12 +78,16 @@ def update_all_feeds():
 
     toml_dict = tomli.loads(config)
 
-    # One broken feed shouldn't stop the others from updating
+    # One broken feed shouldn't stop the others from updating, returns the ones that failed
+    failures = []
     for i in toml_dict['network_feeds'].keys():
         try:
             print(f"{i}: {update_feed(i)} IPs")
         except Exception as e:
             print(f"Failed to update {i}, keeping previous data: {e}")
+            failures.append(f"{i}: {e}")
+
+    return failures
 
 def read_source(url):
     # Returns the text at a url, or at a local path ("/..." or "file://...")

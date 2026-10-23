@@ -4,10 +4,10 @@ import signal
 from desktop_notifier import DesktopNotifier, Urgency, Button, ReplyField, DEFAULT_SOUND, Icon
 from pathlib import Path
 import os
-import functools
 import pathlib
 import shutil
 import requests
+from urllib.parse import unquote
 from tqdm.auto import tqdm
 import tomli
 
@@ -52,10 +52,13 @@ def combine_files(source_file, destination_file):
     except Exception as e:
         print(f"Error: {e}")
 
-def progress_download(url, filename):
+def progress_download(url, filename, progress=None):
+    """
+    Downloads `url` to `filename`, showing a terminal progress bar, or calling progress(text, done_bytes, total_bytes) instead if given
+    """
     print("Downloading", url)
-    
-    r = requests.get(url, stream=True, allow_redirects=True)
+
+    r = requests.get(url, stream=True, allow_redirects=True, timeout=60)
     if r.status_code != 200:
         r.raise_for_status()
         raise RuntimeError(f"Request to {url} returned status code {r.status_code}")
@@ -63,12 +66,19 @@ def progress_download(url, filename):
 
     path = pathlib.Path(filename).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+    name = unquote(url.rsplit("/", 1)[-1]).rsplit("/", 1)[-1]
 
-    desc = "(Unknown total file size)" if file_size == 0 else ""
-    r.raw.read = functools.partial(r.raw.read, decode_content=True)  # Decompress if needed
-    with tqdm.wrapattr(r.raw, "read", total=file_size, desc=desc) as r_raw:
-        with path.open("wb") as f:
-            shutil.copyfileobj(r_raw, f)
+    # Write then rename so an interrupted download can't leave a truncated file in place
+    tmp = path.with_name(path.name + ".part")
+    done = 0
+    with tqdm(total=file_size or None, unit="B", unit_scale=True, desc=name, disable=progress is not None) as bar, tmp.open("wb") as f:
+        for chunk in r.iter_content(chunk_size=1 << 16):
+            f.write(chunk)
+            done += len(chunk)
+            bar.update(len(chunk))
+            if progress:
+                progress(f"Downloading {name}", done, file_size)
+    os.replace(tmp, path)
 
     return path
 
@@ -125,33 +135,39 @@ def download_icon():
 
 def initialize_desktop_file():
 
-    if os.path.exists(str(Path.home())+"/.local/share/applications/menoa.desktop"):
+    desktop_path = Path.home() / ".local" / "share" / "applications" / "menoa.desktop"
+    if desktop_path.exists():
         return
 
-    if not os.fileexists(str(Path.home())+"/.menoa/app_icon.png"):
+    icon_path = Path.home() / ".menoa" / "app_icon.png"
+    if not icon_path.exists():
         download_icon()
-    
-    with open(str(Path.home())+"/.local/share/applications/menoa.desktop", "w") as file:
-            file.write("""[Desktop Entry]
-    Name=Menoa
-    Comment=Antivirus and security center
-    Exec=menoa-gui
-    Icon=~/.menoa/app_icon.png
-    Terminal=false
-    Type=Application
-    Categories=Utility;Security;""")
-        
-def initialize_config():
+
+    desktop_path.parent.mkdir(parents=True, exist_ok=True)
+    # Desktop files don't expand ~, so the icon path has to be absolute
+    desktop_path.write_text(f"""[Desktop Entry]
+Name=Menoa
+Comment=Antivirus and security center
+Exec=menoa-gui
+Icon={icon_path}
+Terminal=false
+Type=Application
+Categories=Utility;Security;
+""")
+
+def initialize_config(progress=None):
     """
-    For installs without a config, write a default one
+    Creates anything missing in ~/.menoa: writes a default config if there isn't one, then downloads feeds and the process model
+
+    progress(text, done_bytes, total_bytes) is called as work happens, total_bytes is 0 when the size isn't known
+    Returns a list of the steps that failed, a failed download doesn't stop the rest of setup
     """
 
     # = Config
     home_path = str(Path.home())
     config_path = home_path + "/.menoa/config.toml"
 
-    if not os.path.exists(home_path + "/.menoa/"):
-        os.mkdir(home_path + '/.menoa/')
+    os.makedirs(home_path + "/.menoa/", exist_ok=True)
 
     default_string = """
     [clamav]
@@ -211,34 +227,40 @@ def initialize_config():
     last_refreshed = 1970-01-01 00:00:00
     """
 
-    # = Network and clam scanning
-    with open(config_path, "w") as f:
-        f.write(default_string)
+    # Never overwrite an existing config, it holds the user's feeds and settings
+    if not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            f.write(default_string)
 
-    if not os.path.exists(home_path + "/.menoa/feeds/"):
-        os.mkdir(home_path + '/.menoa/feeds')
+    for d in ["feeds/clam/quick", "feeds/clam/standard", "feeds/clam/deep", "feeds/network"]:
+        os.makedirs(home_path + "/.menoa/" + d, exist_ok=True)
 
-    if not os.path.exists(home_path + "/.menoa/feeds/clam"):
-        os.mkdir(home_path + '/.menoa/feeds/clam')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/quick"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/quick')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/standard"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/standard')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/clam/deep"):
-        os.mkdir(home_path + '/.menoa/feeds/clam/deep')
-
-    if not os.path.exists(home_path + "/.menoa/feeds/network"):
-        os.mkdir(home_path + '/.menoa/feeds/network')
-
-    # Download all the default feeds
+    # = Downloads
     from menoa.utils.clam_utils import update_all_feeds as clam_update_all_feeds
-    clam_update_all_feeds()
-
     from menoa.utils.network_utils import update_all_feeds as network_update_all_feeds
-    network_update_all_feeds()
+    from menoa.utils.process_utils import download_process_model
+
+    failures = []
+
+    def step(text, fn):
+        print(text)
+        if progress:
+            progress(text, 0, 0)
+        try:
+            fn()
+        except Exception as e:
+            print(f"{text} failed: {e}")
+            failures.append(f"{text}: {e}")
+
+    step("Downloading ClamAV signature databases", lambda: clam_update_all_feeds(progress))
+    def network_feeds():
+        failed = network_update_all_feeds()
+        if failed:
+            raise Exception("; ".join(failed))
+
+    step("Downloading network threat feeds", network_feeds)
+    if not os.path.exists(home_path + "/.menoa/process_scanner.pkl"):
+        step("Downloading process scanning model", lambda: download_process_model(progress))
 
     # Symlink into quick/standard/deep
     clam_path = home_path+"/.menoa/feeds/clam"
@@ -262,21 +284,15 @@ def initialize_config():
     if not os.path.islink(clam_path + "/deep/bytecode.cvd"):
         os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
 
-    if not os.path.exists(home_path + "/.menoa/clam_last_scanned/"):
+    if not os.path.exists(home_path + "/.menoa/clam_last_scanned"):
         with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
             f.write("1970-01-01T00:00:00")
 
     # = Attestation
-    print("Checking attestation database...")
-    if not os.path.exists(home_path + "/.menoa/attestation.db"):
-        with open(home_path + '/.menoa/attestation.db', 'w') as f:
-            f.write("")
+    import menoa.utils.attestation_utils as attestation_utils
+    step("Checking attestation database", attestation_utils.create_table)
 
-        import utils.attestation_utils as attestation_utils
-        print("Creating attestation database...")
-        attestation_utils.create_table()
-    else:
-        print("Attestation database already exists")
+    return failures
 
 
 def get_enabled_tools():
@@ -307,11 +323,20 @@ def rewrite():
         print(e)
         pass
 
-    initialize_config()
+    return initialize_config()
 
-def initialize():
-    initialize_desktop_file()
-    initialize_config()
+def initialize(progress=None):
+    """
+    Sets up a fresh install, see initialize_config(). Returns a list of the steps that failed
+    """
+    failures = []
+    try:
+        initialize_desktop_file()
+    except Exception as e:
+        print(f"Creating desktop entry failed: {e}")
+        failures.append(f"Creating desktop entry: {e}")
+
+    return failures + initialize_config(progress)
 
 """
 Init checks

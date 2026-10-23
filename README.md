@@ -59,6 +59,8 @@ Menoa is made specifically for Linux, and it follows the very important principl
 
 2. Install ClamAV with your package manager: `sudo apt install clamav`, `sudo dnf install clamav`, `sudo pacman -S clamav`
 
+3. Run `menoa init`, or just open `menoa-gui`, which sets itself up on first launch. This creates `~/.menoa` and downloads the ClamAV signature databases (a few hundred MB), so the first run takes a few minutes
+
 ### Windows
 
 1. Switch to Linux

@@ -17,17 +17,14 @@ def get_model_version():
         download_process_model()
         return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
 
-def download_process_model():
+def download_process_model(progress=None):
     # Downloads the latest process model from the menoa servers
     print("Process model not found, downloading...")
 
-    import requests
+    from menoa.utils.utils import progress_download
 
     url = "https://menoa-feeds.us-ord-1.linodeobjects.com/process%2Fprocess_analyses.pkl"
-    response = requests.get(url)
-
-    with open(str(Path.home())+"/.menoa/process_scanner.pkl", "wb") as f:
-        f.write(response.content)
+    progress_download(url, str(Path.home())+"/.menoa/process_scanner.pkl", progress)
 
 def get_process_threshold():
     """

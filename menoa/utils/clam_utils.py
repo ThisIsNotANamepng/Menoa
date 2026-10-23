@@ -141,22 +141,29 @@ def get_scan_total(path):
         pass  # Skip folders/files menoa can't access
     return total
     
-def update_all_feeds():
+DEFAULT_CLAM_FEEDS = ("default_main", "default_daily", "default_bytecode")
+
+def update_all_feeds(progress=None):
 
     with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
         config = file.read()
 
     toml_dict = tomli.loads(config)
 
+    # One cvdupdate run fetches all three default databases
+    if any(i in DEFAULT_CLAM_FEEDS for i in toml_dict['clam_feeds']):
+        update_clamav_feed(progress)
+
     for i in toml_dict['clam_feeds'].keys():
-        update_feed(i)
+        if i not in DEFAULT_CLAM_FEEDS:
+            update_feed(i)
 
 def update_feed(index):
     """
     Updates a feed using the given index which could be a title (as in the "default_daily" in [clam_feeds.default_daily] from the config)
     """
 
-    if index == "default_main" or index == "default_daily" or index == "default_bytecode":
+    if index in DEFAULT_CLAM_FEEDS:
         update_clamav_feed()
         return
 
@@ -176,32 +183,57 @@ def update_feed(index):
     else:
         utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
 
-def update_clamav_feed():
+def _streaming_get(progress):
+    """
+    A requests.get for cvdupdate that streams the body so progress(text, done_bytes, total_bytes) can be reported
+    shortcut: relies on cvdupdate only calling requests.get and reading response.content (true for the pinned 1.1.3), recheck when upgrading cvdupdate
+    """
+
+    def get(url, **kwargs):
+        kwargs.setdefault("timeout", 60)
+        response = requests.get(url, stream=True, **kwargs)
+        name = url.rsplit("/", 1)[-1]
+        total = int(response.headers.get("content-length", 0))
+
+        data = bytearray()
+        for chunk in response.iter_content(chunk_size=1 << 16):
+            data += chunk
+            if name.endswith((".cvd", ".cdiff")):
+                progress(f"Downloading {name}", len(data), total)
+
+        response._content = bytes(data)
+        return response
+
+    return get
+
+def update_clamav_feed(progress=None):
     """
     Updates the feed using cvdupdate, which uses clamav's servers
 
     Only used for clamav feeds bytecode.cvd, main.cvd, daily.cvd (downloaded as daily.cvd)
 
     Assumes that all clamav default feed files are in ~/.menoa/feeds/clam/
+
+    progress(text, done_bytes, total_bytes) is called while each database downloads, if given
     """
+    # Run cvdupdate in-process, the `cvdupdate` command isn't on PATH for pipx installs or desktop launches
+    import cvdupdate.cvdupdate as cvd
+    from types import SimpleNamespace
+    from unittest import mock
 
     print("Updating clamav feeds...")
 
     # Set the database directory to the feed dir instead of the default /var/lib/clamav
+    updater = cvd.CVDUpdate(db_dir=str(Path.home())+"/.menoa/feeds/clam")
 
-    result = subprocess.run(
-        ['cvdupdate', 'config', 'set', '--dbdir', str(Path.home())+"/.menoa/feeds/clam"],
-        check=True,
-        text=True,
-        capture_output=True
-    )
+    if progress:
+        with mock.patch.object(cvd, "requests", SimpleNamespace(get=_streaming_get(progress), exceptions=requests.exceptions)):
+            errors = updater.db_update()
+    else:
+        errors = updater.db_update()
 
-    result = subprocess.run(
-        ['cvdupdate', 'update'],
-        check=True,
-        text=True,
-        capture_output=True
-    )
+    if errors:
+        raise Exception(f"cvdupdate failed to update {errors} database(s), see the cvdupdate log in ~/.cvdupdate/logs")
 
     # cvdupdate makes a dns.txt and some .cdiff files, we need to delete those
     path = Path(str(Path.home())+"/.menoa/feeds/clam/")
