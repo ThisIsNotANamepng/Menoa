@@ -2,6 +2,8 @@
 
 Menoa is a modern, scriptable security tool designed solely for Linux. Its goal is to provide robust malware detection and system monitoring, following Linux principles.. Menoa is not a vulnerability scanner, but a focused security companion for everyday system safety. It's the Linux version of Microsoft Defender, not Lynis
 
+## CURRENTLY UNDER DEVELOPMENT. NOT IN A USABLE STATE YET
+
 ## Utilities
 
 It is made up of five main tools,
