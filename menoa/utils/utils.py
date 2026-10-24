@@ -189,6 +189,8 @@ def initialize_config(progress=None):
     [attestation]
     scan_delay = 600 # 10 minutes
     enabled = true
+    server_url = "" # Attestation server, see menoa/utils/attestation_utils.py for its API
+    public_key = "" # Base64 Ed25519 public key the server's records are signed with
 
     [shell]
 

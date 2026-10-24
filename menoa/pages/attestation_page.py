@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 
 from menoa.utils.attestation_utils import get_number_of_binaries, get_binary_data, attest
 
@@ -17,7 +17,7 @@ class AttestationPage(QWidget):
         # Top buttons
         button_layout = QHBoxLayout()
         self.button1 = QPushButton("Check System Binaries")
-        self.button1.clicked.connect(attest)
+        self.button1.clicked.connect(self.run_attestation)
 
         button_layout.addWidget(self.button1)
         self.layout.addLayout(button_layout)
@@ -37,6 +37,14 @@ class AttestationPage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
+
+    def run_attestation(self):
+        try:
+            counts = attest()
+            QMessageBox.information(self, "Attestation", "\n".join(f"{status}: {n}" for status, n in sorted(counts.items())))
+        except Exception as e:
+            QMessageBox.warning(self, "Attestation", str(e))
+        self.populate_table()
 
     def populate_table(self):
         binary_data = get_binary_data()
