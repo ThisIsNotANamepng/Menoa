@@ -1,9 +1,10 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
 import sys, os
 
-from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned
+from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned, database_freshness, update_all_feeds
+from menoa.pages.progress_dialog import run_with_progress
 
 class Scanner(QObject):
     progress = Signal(int)
@@ -127,6 +128,15 @@ class ClamPage(QWidget):
         ml.addWidget(self.status2)
         mid.setLayout(ml)
 
+        # Signature age, with a way to update them right here
+        self.db_age = QLabel()
+        update_button = QPushButton("Update now"); update_button.clicked.connect(self.update_databases)
+        age = QGroupBox()
+        al = QHBoxLayout()
+        al.addWidget(self.db_age, stretch=1)
+        al.addWidget(update_button)
+        age.setLayout(al)
+
         # Buttons
         btns = QGroupBox()
         bl = QHBoxLayout()
@@ -147,6 +157,7 @@ class ClamPage(QWidget):
         mlayout.setSpacing(10)
         mlayout.addWidget(top,    stretch=3)
         mlayout.addWidget(mid,    stretch=1)
+        mlayout.addWidget(age,    stretch=1)
         mlayout.addWidget(btns,   stretch=1)
         mlayout.addWidget(self.log_box, stretch=6)
 
@@ -154,6 +165,22 @@ class ClamPage(QWidget):
         ver, changed = get_database_version()
         self.status1.setText(f"DB Patch: {ver}, Last changed: {changed}")
         self.status2.setText(f"Last scan: {get_last_time_scanned()}")
+
+        state, text = database_freshness()
+        color = {"fresh": "#4CAF50", "outdated": "#FF9800"}.get(state, "#F44336")
+        if state == "critical":
+            text += ", scans will miss newer malware"
+        elif state in ("missing", "unreadable"):
+            text += ", scans can't run until they're downloaded"
+        self.db_age.setText(text)
+        self.db_age.setStyleSheet(f"color: {color};")
+
+    @Slot()
+    def update_databases(self):
+        failures = run_with_progress(lambda progress: update_all_feeds(progress) or [], "Updating malware signatures...")
+        if failures:
+            QMessageBox.warning(self, "Menoa", "Updating the malware signatures failed:\n\n" + "\n".join(failures))
+        self._load_db_info()
 
     def _start_scan(self, path, scan_type="standard"):
         """Helper to wire up a Scanner worker for a single path."""

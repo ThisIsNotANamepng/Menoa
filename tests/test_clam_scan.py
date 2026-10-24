@@ -3,7 +3,7 @@ Checks that clam scans never report a failed scan as clean. Run with `python tes
 Uses a fake clamscan that replays real clamscan output, so no signature database is needed
 """
 
-import os, stat, sys, tempfile
+import os, stat, sys, tempfile, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -11,10 +11,17 @@ os.environ["HOME"] = tempfile.mkdtemp()
 CLAM_DIR = Path.home() / ".menoa" / "feeds" / "clam"
 CLAM_DIR.mkdir(parents=True)
 DEFAULT_DBS = [str(CLAM_DIR / f"{db}.cvd") for db in ("daily", "main", "bytecode")]
+
+
+def write_db(db="daily", age_days=0):
+    # Real header layout, padded to 512 bytes like a .cvd. The last field is the build time the age is measured from
+    built = int(time.time() - age_days * 86400)
+    (CLAM_DIR / f"{db}.cvd").write_bytes(f"ClamAV-VDB:20 Oct 2026 07-41 +0000:28160:2077386:90:md5:sig:svc.clamav-publisher:{built}".encode().ljust(512))
+
+
 for db in ("daily", "main", "bytecode"):
     (Path.home() / ".menoa" / "config.toml").open("a").write(f'[clam_feeds.default_{db}]\nlocal_path = "~/.menoa/feeds/clam/{db}.cvd"\n')
-    # Real header layout, padded to 512 bytes like a .cvd
-    (CLAM_DIR / f"{db}.cvd").write_bytes(b"ClamAV-VDB:20 Oct 2026 07-41 +0000:28160:2077386:90:md5:sig:svc.clamav-publisher:1792482060".ljust(512))
+    write_db(db)
 
 FAKE_BIN = Path(tempfile.mkdtemp())
 ARGS_FILE = FAKE_BIN / "args"
@@ -43,6 +50,13 @@ ERROR: Can't open file or directory
 CRASHED = "/t/sub/a.txt: OK\n"
 
 CLEAN = "/t/sub/a.txt: OK\n/t/empty.txt: Empty file\n" + SUMMARY.format(viruses=10)
+
+# What clamscan prints first when its database is over 7 days old
+OLD_DB_BANNER = """LibClamAV Warning: **************************************************
+LibClamAV Warning: ***  The virus database is older than 7 days!  ***
+LibClamAV Warning: ***   Please update it as soon as possible.    ***
+LibClamAV Warning: **************************************************
+"""
 
 
 def fake(output, exit_code):
@@ -209,6 +223,81 @@ def test_database_version_without_clamscan():
         os.environ["PATH"] = path
 
 
+def test_database_freshness():
+    try:
+        for age, state, text in [(0.1, "fresh", "2 hours old"), (1, "outdated", "1 day old"), (3, "outdated", "3 days old"), (10, "critical", "10 days old"), (-1, "fresh", "0 hours old")]:
+            write_db(age_days=age)
+            assert clam_utils.database_freshness() == (state, f"Malware signatures are {text}"), (age, clam_utils.database_freshness())
+
+        (CLAM_DIR / "daily.cvd").write_bytes(b"not a database")
+        assert clam_utils.database_freshness()[0] == "unreadable"
+        assert clam_utils.get_database_version() == ("Unreadable", "unknown")
+        os.remove(CLAM_DIR / "daily.cvd")
+        assert clam_utils.database_freshness()[0] == "missing"
+    finally:
+        write_db()
+
+
+def test_outdated_warning():
+    tmp = tempfile.gettempdir()
+    fake(OLD_DB_BANNER + CLEAN, 0)
+    try:
+        write_db(age_days=10)
+        # clamscan's own banner isn't reported as a file that couldn't be scanned
+        assert [r for f, r in scan_all() if f is None] == []
+
+        result = CliRunner().invoke(cli, ["clam", "scan", tmp])
+        assert result.exit_code == 0, result.output
+        assert "10 days old" in result.stderr and "10 days old" not in result.stdout, result.output  # Kept out of piped output
+        assert "couldn't be scanned" not in result.output, result.output
+
+        for command in (["clam", "scan", tmp, "--quiet"], ["clam", "scan", tmp, "-q"], ["clam", "quick", "--quiet"]):
+            result = CliRunner().invoke(cli, command)
+            assert "days old" not in result.output, (command, result.output)
+
+        write_db()
+        assert "old" not in CliRunner().invoke(cli, ["clam", "scan", tmp]).stderr
+    finally:
+        write_db()
+
+
+def test_status_exit_codes():
+    try:
+        for age, exit_code, text in [(0, 0, "0 hours old"), (3, 1, "3 days old"), (10, 1, "10 days old")]:
+            write_db(age_days=age)
+            result = CliRunner().invoke(cli, ["clam", "status"])
+            assert result.exit_code == exit_code and text in result.output and "28160" in result.output, result.output
+
+        os.remove(CLAM_DIR / "daily.cvd")
+        result = CliRunner().invoke(cli, ["clam", "status"])
+        assert result.exit_code == 2 and "aren't downloaded" in result.output, result.output
+    finally:
+        write_db()
+
+
+def test_gui_age_and_update():
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages.clam_page import ClamPage
+    from menoa.pages.progress_dialog import run_with_progress
+    app = QApplication.instance() or QApplication([])
+
+    try:
+        write_db(age_days=10)
+        page = ClamPage()
+        assert page.db_age.text() == "Malware signatures are 10 days old, scans will miss newer malware", page.db_age.text()
+    finally:
+        write_db()
+
+    # The task runs on a worker thread, its progress reaches the dialog, and an exception becomes a failure
+    seen = []
+    def task(progress):
+        progress("Downloading daily.cvd", 5, 10)
+        seen.append(1)
+        return []
+    assert run_with_progress(task, "Updating...") == [] and seen == [1]
+    assert run_with_progress(lambda progress: 1 / 0, "Updating...") == ["division by zero"]
+
+
 if __name__ == "__main__":
     test_custom_feeds_used()
     test_good_scan_classification()
@@ -218,4 +307,8 @@ if __name__ == "__main__":
     test_gui_progress()
     test_scans_use_menoa_databases()
     test_database_version_without_clamscan()
+    test_database_freshness()
+    test_outdated_warning()
+    test_status_exit_codes()
+    test_gui_age_and_update()
     print("All clam scan checks passed")

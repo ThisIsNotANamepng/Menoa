@@ -115,6 +115,8 @@ def scan_path_streaming(path: str):
             elif line.startswith("/") and ": " in line:
                 file, result = line.rsplit(": ", 1)
                 yield (file, result)
+            elif line.startswith("LibClamAV Warning: *"):
+                continue  # clamscan's "database is older than 7 days" banner, Menoa reports the age itself (database_freshness)
             else:
                 messages.append(line)
                 yield (None, line)
@@ -131,22 +133,62 @@ def scan_path_streaming(path: str):
     if summary.get("Known viruses", "0") == "0":
         raise Exception("No malware signatures could be loaded, so nothing was scanned: " + " | ".join(messages[-5:]))
 
-def get_database_version():
+def read_database_header():
     """
-    Returns (version, build date) of Menoa's daily database, read from its header so clamscan isn't needed
+    Returns the header fields of Menoa's daily database, None if it isn't downloaded, [] if it isn't a ClamAV database
     """
 
     path = os.path.expanduser(list_feeds().get("default_daily", {}).get("local_path", "~/.menoa/feeds/clam/daily.cvd"))
     try:
         with open(path, "rb") as f:
-            # ClamAV-VDB:build date:version:signatures:functionality level:md5:signature:builder:build time
-            header = f.read(512).decode("ascii", "replace").split(":")
+            # ClamAV-VDB:build date:version:signatures:functionality level:md5:signature:builder:build time, padded to 512 bytes
+            header = f.read(512).decode("ascii", "replace").strip().split(":")
     except FileNotFoundError:
-        return ("Not downloaded", "never")
+        return None
 
-    if header[0] != "ClamAV-VDB" or len(header) < 3:
+    return header if header[0] == "ClamAV-VDB" and len(header) >= 9 else []
+
+def get_database_version():
+    """
+    Returns (version, build date) of Menoa's daily database, read from its header so clamscan isn't needed
+    """
+
+    header = read_database_header()
+    if header is None:
+        return ("Not downloaded", "never")
+    if not header:
         return ("Unreadable", "unknown")
     return (header[2], header[1])
+
+OUTDATED_AFTER_DAYS = 1  # ClamAV publishes a new daily database several times a day, older means updates aren't running
+CRITICAL_AFTER_DAYS = 7  # Where clamscan itself starts warning
+
+def database_freshness():
+    """
+    Returns (state, text) for Menoa's daily database, state is "fresh", "outdated", "critical", "missing" or "unreadable"
+    and text describes it, like "Malware signatures are 3 days old"
+    """
+
+    header = read_database_header()
+    if header is None:
+        return ("missing", "ClamAV databases aren't downloaded")
+    try:
+        built = int(header[8])
+    except (IndexError, ValueError):
+        return ("unreadable", "Menoa's daily.cvd isn't a readable ClamAV database")
+
+    age = max(datetime.now().timestamp() - built, 0) / 86400
+    if age < 1:
+        amount, unit = int(age * 24), "hour"
+    else:
+        amount, unit = int(age), "day"
+    text = f"Malware signatures are {amount} {unit}{'' if amount == 1 else 's'} old"
+
+    if age >= CRITICAL_AFTER_DAYS:
+        return ("critical", text)
+    if age >= OUTDATED_AFTER_DAYS:
+        return ("outdated", text)
+    return ("fresh", text)
 
 def get_last_time_scanned():
     # Returns the last time the system was scanned

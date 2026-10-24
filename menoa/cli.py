@@ -58,6 +58,7 @@ import menoa.utils.attestation_utils as attestation_utils
 import menoa.utils.script_utils as script_utils
 
 console = Console()
+err_console = Console(stderr=True)  # Warnings, so they stay out of piped output
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version="0.6.0", prog_name="Menoa")
@@ -73,8 +74,14 @@ def clam():
     """ClamAV antivirus related commands"""
     pass
 
-def scan(path):
+def scan(path, quiet=False):
     import menoa.utils.clam_utils as clam_utils
+
+    # Still scans with old signatures, they catch less but more than nothing. A missing database fails the scan below
+    state, text = clam_utils.database_freshness()
+    if not quiet and state in ("outdated", "critical"):
+        color = "red" if state == "critical" else "yellow"
+        err_console.print(f"[{color}]Warning: {text}, run `menoa clam reload` to update them (--quiet hides this)[/{color}]")
 
     console.print("[yellow]Counting total files...  [/yellow]", end='')
     total_files = clam_utils.get_scan_total(path)
@@ -130,36 +137,59 @@ def scan(path):
         sys.exit(1)
 
 @clam.command(name="quick")
-def clam_quick_scan():
+@click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
+def clam_quick_scan(quiet):
     """
     Scans places in which malware is most often found (~/Downloads)
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting quick scan[/blue]")
-    scan(str(Path.home()) + "/Downloads/")
+    scan(str(Path.home()) + "/Downloads/", quiet)
 
 @clam.command(name="full")
-def clam_full_scan():
+@click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
+def clam_full_scan(quiet):
     """
     Scans the whole system from /
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting full system scan from /[/blue]")
-    scan("/")
+    scan("/", quiet)
 
 
 @clam.command(name="scan")
 @click.argument('path', type=str)
-def clam_custom_scan(path):
+@click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
+def clam_custom_scan(path, quiet):
     """
     Perform a custom Clam scan using a given file/dir path
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print(f"[blue]Starting scan from: {path}[/blue]")
-    scan(path)
+    scan(path, quiet)
+
+@clam.command(name="status")
+def clam_status():
+    """
+    Shows the malware signature version and age. Exits 1 if they're outdated, 2 if they're missing or unreadable
+    """
+    import menoa.utils.clam_utils as clam_utils
+
+    version, built = clam_utils.get_database_version()
+    state, text = clam_utils.database_freshness()
+    color = {"fresh": "green", "outdated": "yellow"}.get(state, "red")
+
+    print(f"Database version: {version}, built {built}")
+    console.print(f"[{color}]{text}[/{color}]")
+    if state in ("outdated", "critical"):
+        console.print(f"[{color}]Run `menoa clam reload` to update them[/{color}]")
+        sys.exit(1)
+    if state != "fresh":
+        console.print("[red]Run `menoa clam reload` to download them[/red]")
+        sys.exit(2)
 
 @clam.command(name="reload")
 @click.argument('feed', type=str, required=False)

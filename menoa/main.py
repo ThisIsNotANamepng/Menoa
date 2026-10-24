@@ -34,6 +34,7 @@ BIG_TIME = log(1.45, BIG_TIME)
 
 
 from menoa.pages.script_page import ScriptPage
+from menoa.pages.progress_dialog import run_with_progress
 BIG_TIME = log(1.5, BIG_TIME)
 
 from menoa.utils.utils import get_enabled_tools
@@ -347,69 +348,16 @@ class MainWidget(QWidget):
         self.menu_widget.setCurrentRow(index)
         self.stack.setCurrentIndex(index)
 
-class SetupWorker(QObject):
-    """Runs first-time setup off the GUI thread so the progress dialog stays responsive"""
-    progress = Signal(str, int, int)
-    finished = Signal(list)
-
-    def run(self):
-        from menoa.utils.utils import initialize
-        try:
-            failures = initialize(lambda text, done, total: self.progress.emit(text, done, total))
-        except Exception as e:
-            failures = [str(e)]
-        self.finished.emit(failures)
-
-class SetupDialog(QProgressDialog):
-    """Progress bar for first-time setup. Its slots run on the GUI thread, since the dialog lives there"""
-    def __init__(self):
-        super().__init__("Setting up Menoa...", None, 0, 0)
-        self.setWindowTitle("Menoa setup")
-        self.setCancelButton(None)
-        self.setMinimumDuration(0)
-        self.setMinimumWidth(420)
-        # Without these the dialog hides itself whenever one file finishes
-        self.setAutoClose(False)
-        self.setAutoReset(False)
-        self.failures = []
-
-    def on_progress(self, text, done, total):
-        if total:
-            self.setRange(0, total)
-            self.setValue(done)
-            self.setLabelText(f"{text}\n{done / 1e6:.1f} of {total / 1e6:.1f} MB")
-        else:
-            self.setRange(0, 0)  # Unknown size, show a busy bar
-            self.setLabelText(text)
-
-    def on_finished(self, failures):
-        self.failures = failures
-
 def first_time_setup():
     """
     Creates the default config and downloads feeds with a progress bar, then reports any steps that failed
     """
-    dialog = SetupDialog()
-    thread = QThread()
-    worker = SetupWorker()
-    worker.moveToThread(thread)
-    thread.started.connect(worker.run)
-    worker.progress.connect(dialog.on_progress)
-    worker.finished.connect(dialog.on_finished)
+    from menoa.utils.utils import initialize
+    failures = run_with_progress(initialize, "Setting up Menoa...", "Menoa setup")
 
-    # Wait in a local event loop, closing the dialog early just hides it while setup finishes
-    loop = QEventLoop()
-    worker.finished.connect(loop.quit)
-    dialog.show()
-    thread.start()
-    loop.exec()
-    thread.quit()
-    thread.wait()
-    dialog.close()
-
-    if dialog.failures:
+    if failures:
         QMessageBox.warning(None, "Menoa setup",
-            "Some setup steps failed, Menoa will open without them:\n\n" + "\n".join(dialog.failures) + "\n\nRun `menoa init` to retry.")
+            "Some setup steps failed, Menoa will open without them:\n\n" + "\n".join(failures) + "\n\nRun `menoa init` to retry.")
 
 def main():
     app = QApplication(sys.argv)
