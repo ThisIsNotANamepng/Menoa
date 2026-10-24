@@ -19,11 +19,8 @@ class Scanner(QObject):
 
     @Slot()
     def scan(self):
-        print(self.scan_type)
-        total_files = get_scan_total(self.scan_path)
-        tick_number = total_files / 1000 if total_files >= 1000 else 1
-
-        scanned_files = ticked = last_ticked = 0
+        total_files = max(get_scan_total(self.scan_path), 1)
+        scanned_files = last_value = 0
         infected = problems = 0
 
         try:
@@ -36,12 +33,11 @@ class Scanner(QObject):
                     continue
 
                 scanned_files += 1
-                if total_files >= 1000 and scanned_files - last_ticked >= tick_number:
-                    last_ticked = scanned_files
-                    ticked += 1
-                else:
-                    ticked = min(ticked + (1000 / total_files), 1000)
-                self.progress.emit(int(ticked))
+                # Progress is in tenths of a percent, held below 100% until clamscan actually finishes
+                value = min(scanned_files * 1000 // total_files, 999)
+                if value != last_value:
+                    last_value = value
+                    self.progress.emit(value)
         except Exception as e:
             self.log.emit(f"SCAN FAILED: {e}")
             self.finished.emit()
@@ -49,6 +45,7 @@ class Scanner(QObject):
             return
 
         set_last_time_scanned()
+        self.progress.emit(1000)
         self.finished.emit()
         summary = f"{infected} threat(s) found" if infected else "No threats found"
         if problems:

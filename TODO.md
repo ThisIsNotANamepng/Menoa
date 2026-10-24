@@ -16,7 +16,7 @@ Ordered by priority. Work top to bottom, one at a time.
 
 ## High
 
-- [ ] **5. GUI progress hits 100% at about 53%**: `else` branch double-counts ([clam_page.py](menoa/pages/clam_page.py), `Scanner.scan`). Fixed: summary lines no longer counted as files
+- [x] **5. GUI progress hits 100% at about 53%**: progress is now files done / total, held at 99.9% until clamscan finishes; `get_scan_total` counts exactly what clamscan prints (symlinks, unreadable dirs; verified 26,791/26,791 on /usr/share/doc)
 - [x] **6. `delete_binary` binds `(path)`, not `(path,)`**: replaced by the rewrite
 - [x] **7. `get_package_version` only supports pacman**: now dpkg, rpm and pacman, batched (tested on Ubuntu, Debian, Fedora, Arch)
 - [ ] **8. Custom clam feeds are never used in scans**; `utils` import is commented out ([clam_utils.py:10](menoa/utils/clam_utils.py#L10), [174](menoa/utils/clam_utils.py#L174), [228](menoa/utils/clam_utils.py#L228))

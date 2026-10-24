@@ -166,6 +166,10 @@ def set_last_time_scanned():
         file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
 
 def get_scan_total(path):
+    """
+    Counts the result lines clamscan will print for `path`, for progress bars:
+    one per file and per symlink (it doesn't follow them), one per directory it can't open, none for fifos or sockets
+    """
 
     if not os.path.isdir(path):
         return 1
@@ -174,12 +178,12 @@ def get_scan_total(path):
     try:
         with os.scandir(path) as entries:
             for entry in entries:
-                if entry.is_file():
+                if entry.is_symlink() or entry.is_file(follow_symlinks=False):
                     total += 1
                 elif entry.is_dir(follow_symlinks=False):
                     total += get_scan_total(entry.path)
-    except PermissionError:
-        pass  # Skip folders/files menoa can't access
+    except OSError:
+        return 1  # clamscan prints "Can't open directory." once for it
     return total
     
 DEFAULT_CLAM_FEEDS = ("default_main", "default_daily", "default_bytecode")

@@ -87,8 +87,54 @@ def test_cli_exit_codes():
         assert "No malware found" not in result.output or expected_exit == 0, result.output
 
 
+def test_scan_total_matches_clamscan_lines():
+    # Real clamscan printed 12 lines for this tree: 8 files, 3 symlinks (to a file, a dir, nothing), 1 unreadable dir, nothing for the fifo/socket
+    import socket
+    tree = Path(tempfile.mkdtemp())
+    (tree / "sub" / "deeper").mkdir(parents=True)
+    (tree / "realdir").mkdir()
+    (tree / "locked").mkdir()
+    for name in ["f1", "f2", "f3", "empty", "realdir/inside", "sub/deeper/g1", "sub/deeper/g2", "sub/deeper/g3"]:
+        (tree / name).write_text("x")
+    os.symlink(tree / "f1", tree / "link_file")
+    os.symlink("/nonexistent", tree / "link_broken")
+    os.symlink(tree / "realdir", tree / "link_dir")
+    os.mkfifo(tree / "fifo")
+    socket.socket(socket.AF_UNIX).bind(str(tree / "sock"))
+    (tree / "locked" / "hidden").write_text("x")
+    (tree / "locked").chmod(0)
+    try:
+        assert clam_utils.get_scan_total(str(tree)) == 12
+        assert clam_utils.get_scan_total(str(tree / "f1")) == 1
+    finally:
+        (tree / "locked").chmod(stat.S_IRWXU)
+
+
+def test_gui_progress():
+    from menoa.pages.clam_page import Scanner
+    folder = Path(tempfile.mkdtemp())
+    for i in range(4):
+        (folder / f"f{i}").write_text("x")
+    lines = "".join(f"{folder}/f{i}: OK\n" for i in range(4))
+
+    for output, code, expected in [
+        (lines + SUMMARY.format(viruses=10), 0, [250, 500, 750, 999, 1000]),  # 100% only once clamscan has finished
+        (lines + "LibClamAV Error: boom\n" + SUMMARY.format(viruses=0), 2, [250, 500, 750, 999]),  # failed scans never show 100%
+    ]:
+        fake(output, code)
+        scanner = Scanner()
+        scanner.set_scan_path(str(folder))
+        scanner.set_scan_type("standard")
+        values = []
+        scanner.progress.connect(values.append)
+        scanner.scan()
+        assert values == expected, values
+
+
 if __name__ == "__main__":
     test_good_scan_classification()
     test_failed_scans_raise()
     test_cli_exit_codes()
+    test_scan_total_matches_clamscan_lines()
+    test_gui_progress()
     print("All clam scan checks passed")

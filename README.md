@@ -100,7 +100,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Process scanning returns processes above the threshold as beningn, but only some
 - [ ] Add a status option for cli tools to see whether background work is on or off
 - [ ] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
-- [ ] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
+- [x] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
 - [ ] Make opening the gui faster
 - [ ] Across all tools, make all options available with the cli also available in the gui
 - [ ] Attestation versioning isn't working
