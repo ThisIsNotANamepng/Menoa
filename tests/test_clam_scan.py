@@ -174,7 +174,7 @@ def test_gui_updates_on_gui_thread():
     threads = []
     class RecordingLabel(QLabel):
         def setText(self, text):
-            if text.startswith("Progress"):
+            if text.startswith("Scanning"):
                 threads.append(threading.current_thread())
             super().setText(text)
 

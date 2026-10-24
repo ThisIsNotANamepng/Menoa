@@ -96,6 +96,13 @@ class CircularProgress(QWidget):
         painter.setPen(pen_fg)
         painter.drawArc(rect, start_angle, span_angle)
 
+        if self._min < self._value < self._max:
+            font = painter.font()
+            font.setPixelSize(max(int(min(rect.width(), rect.height()) * 0.18), 10))
+            painter.setFont(font)
+            painter.setPen(self.palette().windowText().color())
+            painter.drawText(rect, Qt.AlignCenter, f"{100 * (self._value - self._min) / (self._max - self._min):.1f}%")
+
         if self._value >= self._max:
             pen_check = QPen(QColor(0,180,0), self._thickness)
             pen_check.setCapStyle(Qt.RoundCap)
@@ -208,6 +215,7 @@ class ClamPage(QWidget):
         self.scan_worker.moveToThread(self.scan_thread)
         self.scan_thread.started.connect(self.scan_worker.scan)
 
+        self.circular.setValue(0)  # Clears the last scan's check mark
         self.scan_worker.progress.connect(self.circular.setValue)
         self.scan_worker.progress.connect(self._show_progress)
         self.scan_worker.log.connect(self.log_box.append)
@@ -224,7 +232,7 @@ class ClamPage(QWidget):
 
     @Slot(int)
     def _show_progress(self, value):
-        self.status1.setText(f"Progress: {value / 10}%")
+        self.status1.setText("Scanning files...")  # The percentage is drawn in the circle
 
     def _maybe_continue_quick(self):
         """If Quick Scan still has more paths, scan next."""

@@ -102,30 +102,30 @@ Menoa is made specifically for Linux, and it follows the very important principl
 
 - [ ] Resolve local ip addresses connected to by processes and compare to urls distrubuted in threat feeds
 - [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
-- [ ] Should network monitoring include ipv6? Right now it doesn't
-- [ ] When clamav scanning is running, the progress % text line should be in the middle of the circle
+- [x] Should network monitoring include ipv6? Right now it doesn't
+- [x] When clamav scanning is running, the progress % text line should be in the middle of the circle
 - [ ] Right now ClamAV just uses the official source but you can load your own yara rules, we could make our own threat feed for yara rules combining other sources
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
 - [ ] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
 - [ ] In GUI be able to stop a scan mid scan without having to close the window
-- [ ] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa
+- [x] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa
 - [ ] Change the load template button on the command page be a button that pops up an input box for you to put a link to a bash file, it downloads and analyzes (meant for install.sh files)
 - [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
 - [ ] Add comments, clean up code
-- [ ] Right now the attestation get package version function only uses pacman, add more package managers
-- [ ] Update the last_checked column in the attestation database
+- [x] Right now the attestation get package version function only uses pacman, add more package managers
+- [x] Update the last_checked column in the attestation database
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 - [x] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan
 - [ ] Add option to do different types of scans in the GUI
-- [ ] Add util to completely redownload feeds, getting rid of past feed signatures
-- [ ] Process scanning returns processes above the threshold as beningn, but only some
+- [x] Add util to completely redownload feeds, getting rid of past feed signatures
+- [x] Process scanning returns processes above the threshold as beningn, but only some
 - [ ] Add a status option for cli tools to see whether background work is on or off
-- [ ] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
+- [x] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
 - [x] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
 - [ ] Make opening the gui faster
 - [ ] Across all tools, make all options available with the cli also available in the gui
-- [ ] Attestation versioning isn't working
+- [x] Attestation versioning isn't working
 - [ ] Set up attestation api
 - [ ] Write more info for learn more buttons on the dashboard
 - [ ] Have instructions to install clamav when not detected, fail gracefully when its not installed
