@@ -2,6 +2,7 @@ import subprocess
 import shutil
 import os
 import re
+import pty
 from datetime import datetime
 import tomli, tomli_w
 from pathlib import Path
@@ -25,10 +26,38 @@ def result_kind(file, result):
         return "clean"
     return "error"
 
-def scan_path_streaming(path: str):
+# clamscan's own progress lines, which it only prints to a terminal, e.g. "Loading:  1s, ETA: 0s [===>   ]  1.39M/3.29M sigs"
+CLAMSCAN_STAGES = {"Loading": "Loading signatures", "Compiling": "Compiling signatures"}
+STAGE_LINE = re.compile(r"^(Loading|Compiling):.*\]\s+([\d.]+[KM]?)/([\d.]+[KM]?) \w+$")
+TERMINAL_ESCAPES = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
+
+def _count(text):
+    # clamscan abbreviates counts: "3.29M", "10.00K", "41"
+    return float(text.rstrip("KM")) * {"K": 1e3, "M": 1e6}.get(text[-1], 1)
+
+def _terminal_lines(fd):
+    # Lines and progress updates (ended by "\r") from a pseudo-terminal, as str, until the program on the other side exits
+    buffer = b""
+    while True:
+        try:
+            chunk = os.read(fd, 1 << 16)
+        except OSError:  # EIO once the program has exited and the terminal is closed
+            break
+        if not chunk:
+            break
+        *lines, buffer = re.split(rb"\r\n|\r|\n", buffer + chunk)
+        for line in lines:
+            # Decoded like filesystem paths, so a filename that isn't valid UTF-8 doesn't break the scan
+            yield os.fsdecode(TERMINAL_ESCAPES.sub(b"", line))
+    if buffer:
+        yield os.fsdecode(TERMINAL_ESCAPES.sub(b"", buffer))
+
+def scan_path_streaming(path: str, on_progress=None, on_summary=None):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
+    on_progress(stage, done, total) is called while clamscan loads and compiles its signatures (stages in CLAMSCAN_STAGES),
+    on_summary(summary) with clamscan's scan summary ({"Scanned files": "12", "Time": "5.3 sec (0 m 5 s)", ...})
 
     Raises an Exception once the scan ends if it couldn't actually check anything (no signatures loaded, clamscan crashed),
     so a failed scan is never mistaken for a clean one
@@ -66,17 +95,27 @@ def scan_path_streaming(path: str):
 
     cmd.append(path)
 
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # A pseudo-terminal instead of a pipe: clamscan only reports its loading progress to a terminal, and it prints each result
+    # as soon as it has it instead of in buffered chunks. It's still a separate process, so a crash scanning a file stays in clamscan
+    reader, terminal = pty.openpty()
+    try:
+        process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=terminal, stderr=terminal)
+    finally:
+        os.close(terminal)
     messages = []
     summary = None
 
     try:
-        for line in process.stdout:
+        for line in _terminal_lines(reader):
             line = line.strip()
             if not line:
                 continue
 
-            if line.startswith("----------- SCAN SUMMARY"):
+            stage = STAGE_LINE.match(line)
+            if stage:
+                if on_progress:
+                    on_progress(CLAMSCAN_STAGES[stage[1]], _count(stage[2]), _count(stage[3]))
+            elif line.startswith("----------- SCAN SUMMARY"):
                 summary = {}
             elif summary is not None:
                 key, _, value = line.partition(": ")
@@ -95,12 +134,17 @@ def scan_path_streaming(path: str):
         # Stop clamscan if the caller stops reading early
         if process.poll() is None:
             process.kill()
+            process.wait()
+        os.close(reader)
 
     if summary is None:
         raise Exception(f"clamscan exited with code {process.returncode} before finishing: " + " | ".join(messages[-5:]))
 
     if summary.get("Known viruses", "0") == "0":
         raise Exception("No malware signatures could be loaded, so nothing was scanned: " + " | ".join(messages[-5:]))
+
+    if on_summary:
+        on_summary(summary)
 
 def read_database_header():
     """

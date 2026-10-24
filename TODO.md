@@ -52,7 +52,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [ ] `setup.py`: `==` pins in `install_requires`; placeholder `author_email`/`url`
 
 ## User Submitted
-- [ ] Using the clamav library instead of watching a subprocess
+- [x] Using the clamav library instead of watching a subprocess. Kept clamscan as a separate process (a crash parsing a hostile file stays out of the GUI), but it now runs in a pseudo-terminal so it reports its signature loading/compiling progress, shown in the GUI log/status and as CLI bars, plus its scan summary
 - [ ] Fixing up the gui to make it look better and also make the top bar of the window match the theme
 
 ## To discuss

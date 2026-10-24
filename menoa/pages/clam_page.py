@@ -21,8 +21,21 @@ class Scanner(QObject):
         scanned_files = last_value = 0
         infected = problems = 0
 
+        stages = []
+
+        def on_progress(stage, done, total):
+            # Before any file is scanned clamscan loads and compiles its signatures, which takes seconds
+            if stage not in stages:
+                stages.append(stage)
+                self.log.emit(f"{stage}...")
+            self.status.emit(f"{stage}: {min(done / total, 1):.0%}" if total else f"{stage}...")
+
+        def on_summary(summary):
+            self.log.emit(f"Scanned {summary.get('Scanned files', '?')} files ({summary.get('Data scanned', '?')}) with "
+                          f"{int(summary.get('Known viruses', 0)):,} signatures in {summary.get('Time', '?').split(' (')[0]}")
+
         try:
-            for file, result in scan_path_streaming(self.scan_path):
+            for file, result in scan_path_streaming(self.scan_path, on_progress, on_summary):
                 kind = result_kind(file, result)
                 infected += kind == "infected"
                 problems += kind == "error"

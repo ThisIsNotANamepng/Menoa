@@ -51,6 +51,13 @@ CRASHED = "/t/sub/a.txt: OK\n"
 
 CLEAN = "/t/sub/a.txt: OK\n/t/empty.txt: Empty file\n" + SUMMARY.format(viruses=10)
 
+# What clamscan prints on a terminal while it loads its signatures: "\r" redraws the line, escape codes toggle line wrapping
+PROGRESS = ("Loading:     0s               [                         ]        0/3.29M sigs    \r"
+            "\x1b[?7lLoading:     1s, ETA:   0s [==========>              ]    1.39M/3.29M sigs    \x1b[?7h\r"
+            "Loading:     2s, ETA:   0s [========================>]    3.29M/3.29M sigs    \r\n"
+            "Compiling:   1s, ETA:   0s [===========>             ]       20/41 tasks \r"
+            "Compiling:   2s, ETA:   0s [========================>]       41/41 tasks \r\n")
+
 # What clamscan prints first when its database is over 7 days old
 OLD_DB_BANNER = """LibClamAV Warning: **************************************************
 LibClamAV Warning: ***  The virus database is older than 7 days!  ***
@@ -180,6 +187,40 @@ def test_gui_updates_on_gui_thread():
         time.sleep(0.01)
     assert threads and all(t is threading.main_thread() for t in threads), threads
     assert page.circular._value == 1000
+
+
+def test_clamscan_progress_and_summary():
+    fake(PROGRESS + CLEAN, 0)
+    events, summaries = [], []
+    items = list(clam_utils.scan_path_streaming(tempfile.gettempdir(), lambda *e: events.append(e), summaries.append))
+
+    assert [(stage, round(done), round(total)) for stage, done, total in events] == [
+        ("Loading signatures", 0, 3290000), ("Loading signatures", 1390000, 3290000), ("Loading signatures", 3290000, 3290000),
+        ("Compiling signatures", 20, 41), ("Compiling signatures", 41, 41),
+    ], events
+    assert items == [("/t/sub/a.txt", "OK"), ("/t/empty.txt", "Empty file")], items  # Progress lines never show up as results
+    assert summaries == [{"Known viruses": "10", "Engine version": "1.4.4", "Scanned files": "2"}], summaries
+
+    # A filename that isn't valid UTF-8 is passed on like Python passes filesystem paths, not an error
+    output = Path(tempfile.mkstemp()[1])
+    output.write_bytes(b"/t/caf\xe9.txt: OK\n" + SUMMARY.format(viruses=10).encode())
+    os.environ["FAKE_CLAM_OUT"], os.environ["FAKE_CLAM_EXIT"] = str(output), "0"
+    [(file, result)] = scan_all()
+    assert os.fsencode(file) == b"/t/caf\xe9.txt" and result == "OK"
+
+
+def test_gui_log_shows_loading():
+    from menoa.pages.clam_page import Scanner
+    fake(PROGRESS + CLEAN, 0)
+    scanner = Scanner()
+    scanner.set_scan_path(tempfile.gettempdir())
+    log, status = [], []
+    scanner.log.connect(log.append)
+    scanner.status.connect(status.append)
+    scanner.scan()
+    assert log[:2] == ["Loading signatures...", "Compiling signatures..."], log
+    assert log[-1].startswith("Scanned 2 files (") and "with 10 signatures" in log[-1], log
+    assert "Loading signatures: 42%" in status and status[-1].startswith("Completed"), status
 
 
 def test_custom_feeds_used():
@@ -394,6 +435,8 @@ if __name__ == "__main__":
     test_scan_total_matches_clamscan_lines()
     test_gui_progress()
     test_gui_updates_on_gui_thread()
+    test_clamscan_progress_and_summary()
+    test_gui_log_shows_loading()
     test_scans_use_menoa_databases()
     test_database_version_without_clamscan()
     test_database_freshness()

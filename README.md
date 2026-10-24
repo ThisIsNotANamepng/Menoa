@@ -128,5 +128,6 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Attestation versioning isn't working
 - [ ] Set up attestation api
 - [ ] Write more info for learn more buttons on the dashboard
+- [ ] Have instructions to install clamav when not detected, fail gracefully when its not installed
 
 Written by [Jack Hagen](https://hagen.rip)

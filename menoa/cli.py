@@ -87,37 +87,50 @@ def scan(path, quiet=False):
     total_files = clam_utils.get_scan_total(path)
     print(total_files)
 
-    #print(total_files)
-    console.print(f"[yellow]Loading signatures from {', '.join(clam_utils.list_feeds())}...[/yellow]", end='')
+    console.print(f"[yellow]Signatures: {', '.join(clam_utils.list_feeds())}[/yellow]")
     progress = None
+    stage_bar = None
+    summary = {}
 
-    first = True
+    def on_progress(stage, done, total):
+        # clamscan's totals are running estimates that change as it opens each database, so show its percentage
+        nonlocal stage_bar
+        if stage_bar is None or stage_bar.desc != stage:
+            if stage_bar:
+                stage_bar.close()
+            stage_bar = tqdm(desc=stage, total=100, bar_format="{desc}: {percentage:3.0f}%|{bar}| {elapsed}")
+        stage_bar.n = min(100, round(done / total * 100)) if total else 0
+        stage_bar.refresh()
 
     infected = []
     problems = []
 
     try:
-        for file, result in clam_utils.scan_path_streaming(path):
+        for file, result in clam_utils.scan_path_streaming(path, on_progress, summary.update):
             kind = clam_utils.result_kind(file, result)
             if kind == "infected":
                 infected.append(f"{file} {result}")
             elif kind == "error":
                 problems.append(f"{file}: {result}" if file else result)
 
-            if progress is None: # If the progress bar is created before the loop it's hung at 0% while the signatures are loaded into memory
-                print()
+            if progress is None:  # Created once the signatures are loaded, so it doesn't sit at 0% meanwhile
+                if stage_bar:
+                    stage_bar.close()
                 progress = tqdm(desc="Scanning files", unit="file", total=total_files)
 
             if file:
                 progress.update(1)
     except Exception as e:
-        if progress:
-            progress.close()
+        for bar in (stage_bar, progress):
+            if bar:
+                bar.close()
         console.print(f"[red]Scan failed, files were NOT checked: {e}[/red]")
         sys.exit(2)
 
-    if progress:
-        progress.close()
+    for bar in (stage_bar, progress):
+        if bar:
+            bar.close()
+    console.print(f"Scanned {summary.get('Scanned files', '?')} files with {int(summary.get('Known viruses', 0)):,} signatures in {summary.get('Time', '?').split(' (')[0]}")
 
     if problems:
         # A full scan can hit thousands of unreadable files, show the first few
