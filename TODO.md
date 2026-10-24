@@ -41,11 +41,11 @@ Ordered by priority. Work top to bottom, one at a time.
 
 - [x] `clam_last_scanned/` check has a trailing slash, so the timestamp resets every init
 - [ ] `clock.py` broken `utils.` import, runs at import time, bare `except` ([clock.py:3](menoa/clock.py#L3))
-- [ ] `main.py` prints import timings on every launch
-- [ ] `ClamPage._start_scan` connects lambdas to worker signals; Qt runs those on the worker thread, so they call `setText` off the GUI thread (connect bound widget methods instead)
-- [ ] `clam_utils.scan_path` is dead code calling an undefined `parse_clamscan_output`
-- [ ] `if not seconds`: a delay or threshold of 0 can't be set (CLI)
-- [ ] Wrong CLI help text (process/attestation `toggle` say "network"; `attestation delay` says "Process")
+- [x] `main.py` prints import timings on every launch
+- [x] `ClamPage._start_scan` connects lambdas to worker signals; Qt runs those on the worker thread, so they call `setText` off the GUI thread (connect bound widget methods instead)
+- [x] `clam_utils.scan_path` is dead code calling an undefined `parse_clamscan_output`
+- [x] `if not seconds`: a delay or threshold of 0 can't be set (CLI)
+- [x] Wrong CLI help text (process/attestation `toggle` say "network"; `attestation delay` says "Process")
 - [x] `combine_files` swallows errors; fixed `/tmp` download filename (both deleted with feed versioning)
 - [x] Dead code: duplicate `toggle`, `attest_with_server` uses undefined `data`
 - [ ] `build/lib/` is tracked in git despite `.gitignore`

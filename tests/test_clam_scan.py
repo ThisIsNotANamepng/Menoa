@@ -151,6 +151,37 @@ def test_gui_progress():
         assert values == expected, values
 
 
+def test_gui_updates_on_gui_thread():
+    # The page's progress handler must run on the GUI thread, not the scan's worker thread
+    import threading
+    from PySide6.QtWidgets import QApplication, QLabel
+    from menoa.pages.clam_page import ClamPage
+    app = QApplication.instance() or QApplication([])
+
+    folder = Path(tempfile.mkdtemp())
+    for i in range(4):
+        (folder / f"f{i}").write_text("x")
+    fake("".join(f"{folder}/f{i}: OK\n" for i in range(4)) + SUMMARY.format(viruses=10), 0)
+
+    # Records which thread sets the progress text. The page itself isn't subclassed: PySide6 runs an override of a slot on the emitting thread
+    threads = []
+    class RecordingLabel(QLabel):
+        def setText(self, text):
+            if text.startswith("Progress"):
+                threads.append(threading.current_thread())
+            super().setText(text)
+
+    page = ClamPage()
+    page.status1 = RecordingLabel()
+    page._start_scan(str(folder))
+    end = time.time() + 30
+    while time.time() < end and (page.scan_thread.isRunning() or not threads):
+        app.processEvents()
+        time.sleep(0.01)
+    assert threads and all(t is threading.main_thread() for t in threads), threads
+    assert page.circular._value == 1000
+
+
 def test_custom_feeds_used():
     import threading
     from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -362,6 +393,7 @@ if __name__ == "__main__":
     test_cli_exit_codes()
     test_scan_total_matches_clamscan_lines()
     test_gui_progress()
+    test_gui_updates_on_gui_thread()
     test_scans_use_menoa_databases()
     test_database_version_without_clamscan()
     test_database_freshness()

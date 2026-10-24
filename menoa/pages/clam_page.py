@@ -196,12 +196,11 @@ class ClamPage(QWidget):
         self.scan_thread.started.connect(self.scan_worker.scan)
 
         self.scan_worker.progress.connect(self.circular.setValue)
-        self.scan_worker.progress.connect(lambda v: self.status1.setText(f"Progress: {v/10}%"))
+        self.scan_worker.progress.connect(self._show_progress)
         self.scan_worker.log.connect(self.log_box.append)
 
         self.scan_worker.finished.connect(self.scan_thread.quit)
-        self.scan_worker.finished.connect(self._load_db_info)
-        self.scan_worker.finished.connect(lambda: self.status2.setText(f"Last scan: {get_last_time_scanned()}"))
+        self.scan_worker.finished.connect(self._load_db_info)  # Also updates "Last scan"
         self.scan_worker.status.connect(self.status1.setText)
 
         if scan_type == "quick":
@@ -209,6 +208,10 @@ class ClamPage(QWidget):
             self.scan_worker.finished.connect(self._maybe_continue_quick)
 
         self.scan_thread.start()
+
+    @Slot(int)
+    def _show_progress(self, value):
+        self.status1.setText(f"Progress: {value / 10}%")
 
     def _maybe_continue_quick(self):
         """If Quick Scan still has more paths, scan next."""

@@ -2,7 +2,6 @@ import subprocess
 import shutil
 import os
 import re
-from typing import List, Tuple, Optional
 from datetime import datetime
 import tomli, tomli_w
 from pathlib import Path
@@ -13,38 +12,6 @@ import menoa.utils.utils as utils
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
     return shutil.which("clamscan") is not None
-
-def is_freshclam_available() -> bool:
-    """Check if freshclam (database updater) is installed."""
-    return shutil.which("freshclam") is not None
-
-def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, str]]]:
-    """
-    Scan a file or directory using clamscan.
-    
-    Returns a tuple (success, results), where results is a list of (filename, result) tuples.
-    """
-    if not is_clamscan_available():
-        return False, [("ERROR", "clamscan not found in PATH.")]
-
-    if not os.path.exists(path):
-        return False, [("ERROR", f"Path not found: {path}")]
-
-    cmd = ["clamscan"]
-    if recursive:
-        cmd.append("-r")
-    cmd.append(path)
-
-    try:
-        process = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    except subprocess.CalledProcessError as e:
-        # clamscan exits with non-zero status if infection is found
-        output = e.stdout
-    else:
-        output = process.stdout
-
-    results = parse_clamscan_output(output)
-    return True, results
 
 CLEAN_RESULTS = ("OK", "Empty file", "Symbolic link", "Excluded")
 

@@ -338,19 +338,6 @@ def set_scanning_delay(seconds):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def set_scanning_threshold(threshold):
-    """
-    Sets the threshold for scanning
-    """
-
-    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
-        config = tomli.load(f)
-
-    config["process"]["threshold"] = threshold
-
-    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
-        tomli_w.dump(config, f)
-
 def get_scanning_delay():
     """
     Returns the delay for scanning

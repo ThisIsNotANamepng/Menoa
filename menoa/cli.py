@@ -261,18 +261,18 @@ def clam_list_feeds():
 
 @clam.command(name="delay")
 @click.option('--update', required=False, is_flag=True)
-@click.argument('seconds', type=int, required=False)
-def clam_set_delay(update, seconds=False):
+@click.argument('seconds', type=click.IntRange(min=0), required=False)
+def clam_set_delay(update, seconds=None):
     """
     Set/get scan or feed update delay (in seconds) for Clam. If no delay is passed, prints the delay and exits
     """
     import menoa.utils.clam_utils as clam_utils
 
-    if not seconds and update:
+    if seconds is None and update:
         console.print(f"[green]Feed update delay: {clam_utils.get_delay()['feed_update_delay']}[/green]")
-    elif not seconds and not update:
+    elif seconds is None:
         console.print(f"[green]Scan delay: {clam_utils.get_delay()['scan_delay']}[/green]")
-    elif seconds and update:
+    elif update:
         clam_utils.set_feed_update_delay(seconds)
         console.print(f"[green]Set feed update delay to {seconds}")
     else:
@@ -426,18 +426,18 @@ def network_list_feeds():
 
 @network.command(name="delay")
 @click.option('--update', required=False, is_flag=True)
-@click.argument('seconds', type=int, required=False)
-def network_set_delay(update, seconds=False):
+@click.argument('seconds', type=click.IntRange(min=0), required=False)
+def network_set_delay(update, seconds=None):
     """
     Set/get network scan or feed update delay (in seconds). If no delay is passed, prints the delay and exits
     """
     import menoa.utils.network_utils as network_utils
     
-    if not seconds and update:
+    if seconds is None and update:
         console.print(f"[green]Feed update delay: {network_utils.get_delay()['feed_update_delay']}[/green]")
-    elif not seconds and not update:
+    elif seconds is None:
         console.print(f"[green]Scan delay: {network_utils.get_delay()['scan_delay']}[/green]")
-    elif seconds and update:
+    elif update:
         network_utils.set_feed_update_delay(seconds)
         console.print(f"[green]Set feed update delay to {seconds}")
     else:
@@ -448,8 +448,8 @@ def network_set_delay(update, seconds=False):
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
 def network_toggle_background_on(on, off):
-    """    
-    Toggle network background scanning on
+    """
+    Toggle network background scanning on/off
     """
     import menoa.utils.network_utils as network_utils
 
@@ -509,41 +509,41 @@ def process_scan(threshold=None, quiet=False):
         console.print(table)
 
 @process.command(name="delay")
-@click.argument('seconds', type=float, required=False)
-def process_set_delay(seconds=False):
+@click.argument('seconds', type=click.FloatRange(min=0), required=False)
+def process_set_delay(seconds=None):
     """
     Set/get process scan delay (in seconds). If no delay is passed, prints the delay and exits
     """
 
     import menoa.utils.process_utils as process_utils
 
-    if not seconds:
+    if seconds is None:
         console.print(f"[green]Delay: {process_utils.get_scanning_delay()}[/green]")
     else:
         process_utils.set_scanning_delay(seconds)
         console.print(f"[green]Process scan delay set to {seconds} seconds[/green]")
 
 @process.command(name="threshold")
-@click.argument('threshold', type=float, required=False)
-def process_get_threshold(threshold=False):
+@click.argument('threshold', type=click.FloatRange(0, 1), required=False)
+def process_get_threshold(threshold=None):
     """
-    Set/get process scan detection threshold. If no threshold is passed, prints the delay and exits
+    Set/get process scan detection threshold (0 to 1). If no threshold is passed, prints the threshold and exits
     """
 
     import menoa.utils.process_utils as process_utils
 
-    if not threshold:
+    if threshold is None:
         console.print(f"[green]Threshold: {process_utils.get_process_threshold()}[/green]")
     else:
-        process_utils.set_scanning_threshold(threshold)
+        process_utils.set_process_threshold(threshold)
         console.print(f"[green]Process scan threshold set to {threshold}[/green]")
 
 @process.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
 def process_toggle_background_on(on, off):
-    """    
-    Toggle network background scanning on
+    """
+    Toggle process background scanning on/off
     """
     import menoa.utils.process_utils as process_utils
 
@@ -654,17 +654,17 @@ def attestation():
     pass
 
 @attestation.command(name="delay")
-@click.argument('seconds', type=float, required=False)
-def attestation_set_delay(seconds=False):
+@click.argument('seconds', type=click.FloatRange(min=0), required=False)
+def attestation_set_delay(seconds=None):
     """
-    Set/get process scan delay (in seconds). If no delay is passed, prints the delay and exits
+    Set/get attestation check delay (in seconds). If no delay is passed, prints the delay and exits
     """
 
-    if not seconds:
+    if seconds is None:
         console.print(f"[green]Delay: {attestation_utils.get_scanning_delay()}[/green]")
     else:
         attestation_utils.set_scanning_delay(seconds)
-        console.print(f"[green]Process scan delay set to {seconds} seconds[/green]")
+        console.print(f"[green]Attestation check delay set to {seconds} seconds[/green]")
 
 """
 @attestation.command(name="status")
@@ -681,8 +681,8 @@ def attest_get_status():
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
 def attestation_toggle_background_on(on, off):
-    """    
-    Toggle network background scanning on
+    """
+    Toggle attestation background checks on/off
     """
 
     if on:

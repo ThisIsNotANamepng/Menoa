@@ -11,7 +11,6 @@ from menoa.utils.process_utils import predict, get_process_threshold, set_proces
 class PredictionEngine(QObject):
     def __init__(self):
         super().__init__()
-        print("Engine started")
         self.data = ([], [])  # Initialize empty data structure
 
     def scan(self, threshold=0.6):
