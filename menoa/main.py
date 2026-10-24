@@ -37,7 +37,7 @@ from menoa.pages.script_page import ScriptPage
 from menoa.pages.progress_dialog import run_with_progress
 BIG_TIME = log(1.5, BIG_TIME)
 
-from menoa.utils.utils import get_enabled_tools
+from menoa.utils.utils import get_enabled_tools, ICON_PATH
 from menoa.utils.clam_utils import database_freshness, get_last_time_scanned
 
 BIG_TIME = log(2, BIG_TIME)
@@ -312,7 +312,6 @@ class MainWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Menoa")
-        self.setWindowIcon(QIcon(str(Path.home()) + "/notification_icon.png"))
 
         #self.setMinimumSize(1000, 700)
 
@@ -371,7 +370,7 @@ def first_time_setup():
 
 def main():
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon("/home/jack/code/Menoa/menoa/notification_icon.png"))
+    app.setWindowIcon(QIcon(str(ICON_PATH)))  # Every window uses it
 
     # Dark mode and light mode
     if QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:

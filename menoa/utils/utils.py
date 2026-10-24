@@ -6,10 +6,14 @@ from pathlib import Path
 import os
 import pathlib
 import shutil
+import sys
 import requests
 from urllib.parse import unquote
 from tqdm.auto import tqdm
 import tomli
+
+# Menoa's icon, shipped inside the package (package_data in setup.py)
+ICON_PATH = Path(__file__).resolve().parent.parent / "notification_icon.png"
 
 def alert(title, text, type="normal", location="desktop"):
     """
@@ -22,8 +26,7 @@ def alert(title, text, type="normal", location="desktop"):
 
 async def desktop_notification(title, text) -> None:
     notifier = DesktopNotifier(app_name="Menoa")
-    icon_path = Path("/home/jack/code/Menoa/menoa/notification_icon.png")
-    icon = Icon(path=icon_path)
+    icon = Icon(path=ICON_PATH)
 
     await notifier.send(
         title=title,
@@ -116,43 +119,32 @@ def progress_patch_download(url, filename, current_version):
 
     return new_version
 
-def download_icon():
-    """
-    Downloads an image from `url` and saves it to ~/.menoa/app_icon.png
-    """
-
-    target = Path.home() / ".menoa" / "app_icon.png"
-    target.parent.mkdir(parents=True, exist_ok=True)
-
-    r = requests.get("https://menoa.org/static/images/logo.png", stream=True, timeout=15)
-    r.raise_for_status()
-
-    with open(target, "wb") as fh:
-        for chunk in r.iter_content(chunk_size=8192):
-            fh.write(chunk)
-
-    return target
-
 def initialize_desktop_file():
+    """
+    Adds Menoa to the app menu. Rewritten every init, so it follows Menoa to wherever it's installed now
+    """
 
     desktop_path = Path.home() / ".local" / "share" / "applications" / "menoa.desktop"
-    if desktop_path.exists():
-        return
 
+    # A copy outside the install folder, so the menu icon survives Menoa being reinstalled or its venv moved
     icon_path = Path.home() / ".menoa" / "app_icon.png"
-    if not icon_path.exists():
-        download_icon()
+    icon_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ICON_PATH, icon_path)
+
+    # The app menu doesn't get the PATH of a venv or a terminal, so use the menoa-gui installed next to the running menoa command
+    gui = Path(sys.argv[0]).absolute().parent / "menoa-gui"
+    exec_path = str(gui) if gui.exists() else shutil.which("menoa-gui") or "menoa-gui"
 
     desktop_path.parent.mkdir(parents=True, exist_ok=True)
-    # Desktop files don't expand ~, so the icon path has to be absolute
+    # Desktop files don't expand ~, so the paths have to be absolute
     desktop_path.write_text(f"""[Desktop Entry]
 Name=Menoa
 Comment=Antivirus and security center
-Exec=menoa-gui
+Exec="{exec_path}"
 Icon={icon_path}
 Terminal=false
 Type=Application
-Categories=Utility;Security;
+Categories=System;Security;
 """)
 
 def initialize_config(progress=None):
