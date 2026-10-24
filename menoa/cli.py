@@ -87,32 +87,47 @@ def scan(path):
     first = True
 
     infected = []
-    sigs = []
+    problems = []
 
-    for file, result in clam_utils.scan_path_streaming(path):
-        
-        #print(f"{file} {result}")
-        if result != "OK" and file[0] == "/":
-            infected.append(file)
-            sigs.append(result)
+    try:
+        for file, result in clam_utils.scan_path_streaming(path):
+            kind = clam_utils.result_kind(file, result)
+            if kind == "infected":
+                infected.append(f"{file} {result}")
+            elif kind == "error":
+                problems.append(f"{file}: {result}" if file else result)
 
-        if progress is None: # If the progress bar is created before the loop it's hung at 0% while the signatures are loaded into memory
-            print()
-            progress = tqdm(desc="Scanning files", unit="file", total=total_files)
-        
-        progress.update(1)
+            if progress is None: # If the progress bar is created before the loop it's hung at 0% while the signatures are loaded into memory
+                print()
+                progress = tqdm(desc="Scanning files", unit="file", total=total_files)
+
+            if file:
+                progress.update(1)
+    except Exception as e:
+        if progress:
+            progress.close()
+        console.print(f"[red]Scan failed, files were NOT checked: {e}[/red]")
+        sys.exit(2)
 
     if progress:
         progress.close()
-        progress.close()
 
+    if problems:
+        # A full scan can hit thousands of unreadable files, show the first few
+        console.print(f"[yellow]{len(problems)} item(s) couldn't be scanned:[/yellow]")
+        for p in problems[:20]:
+            print(" ", p)
+        if len(problems) > 20:
+            print(f"  ...and {len(problems) - 20} more")
+
+    # Exit codes match clamscan: 0 clean, 1 malware found, 2 scan failed
     if len(infected) == 0:
         console.print("[green]No malware found![/green]")
     else:
         console.print("[red]Malware found[/red]")
-
-        for path, sig in zip(infected, sigs):
-            print(path, sig)
+        for line in infected:
+            print(line)
+        sys.exit(1)
 
 @clam.command(name="quick")
 def clam_quick_scan():

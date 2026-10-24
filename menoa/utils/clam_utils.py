@@ -45,11 +45,35 @@ def scan_path(path: str, recursive: bool = True) -> Tuple[bool, List[Tuple[str, 
     results = parse_clamscan_output(output)
     return True, results
 
+CLEAN_RESULTS = ("OK", "Empty file", "Symbolic link", "Excluded")
+
+def result_kind(file, result):
+    """
+    Classifies an item from scan_path_streaming() as "infected", "clean", or "error" (a file or engine problem, the file wasn't checked)
+    """
+    if file and result.endswith(" FOUND"):
+        return "infected"
+    if file and result in CLEAN_RESULTS:
+        return "clean"
+    return "error"
+
 def scan_path_streaming(path: str, scan_type="standard"):
     """
     Generator that streams clamscan output line-by-line.
-    Yields (filename, result) as they're found.
+    Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
+
+    Raises an Exception once the scan ends if it couldn't actually check anything (no signatures loaded, clamscan crashed),
+    so a failed scan is never mistaken for a clean one
     """
+
+    # Absolute paths make every file line start with "/", which is how they're told apart from engine messages
+    path = os.path.abspath(path)
+
+    if not is_clamscan_available():
+        raise Exception("clamscan not found in PATH, install ClamAV")
+
+    if not os.path.exists(path):
+        raise Exception(f"Path not found: {path}")
 
     cmd = ["clamscan"]
 
@@ -73,22 +97,39 @@ def scan_path_streaming(path: str, scan_type="standard"):
 
     cmd.append(path)
 
-    if not is_clamscan_available():
-        print("Clam error")
-        yield ("ERROR", "clamscan not found in PATH.")
-        return
-
-    if not os.path.exists(path):
-        print("path error")
-        yield ("ERROR", f"Path not found: {path}")
-        return
-
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    messages = []
+    summary = None
 
-    for line in process.stdout:
-        if ": " in line:
-            file, result = line.strip().rsplit(": ", 1)
-            yield (file, result)
+    try:
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line.startswith("----------- SCAN SUMMARY"):
+                summary = {}
+            elif summary is not None:
+                key, _, value = line.partition(": ")
+                summary[key] = value
+            elif line.startswith("/") and ": " in line:
+                file, result = line.rsplit(": ", 1)
+                yield (file, result)
+            else:
+                messages.append(line)
+                yield (None, line)
+
+        process.wait()
+    finally:
+        # Stop clamscan if the caller stops reading early
+        if process.poll() is None:
+            process.kill()
+
+    if summary is None:
+        raise Exception(f"clamscan exited with code {process.returncode} before finishing: " + " | ".join(messages[-5:]))
+
+    if summary.get("Known viruses", "0") == "0":
+        raise Exception("No malware signatures could be loaded, so nothing was scanned: " + " | ".join(messages[-5:]))
 
 def get_clamav_version() -> str:
     """Return the version of clamscan if available."""

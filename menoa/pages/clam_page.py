@@ -3,11 +3,12 @@ from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
 import sys, os
 
-from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, get_last_time_scanned, get_database_version, set_last_time_scanned
+from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned
 
 class Scanner(QObject):
     progress = Signal(int)
     finished = Signal()
+    status = Signal(str)  # Final result text, emitted after finished so it isn't overwritten by finished's handlers
     log = Signal(str)
 
     def set_scan_path(self, path):
@@ -23,20 +24,36 @@ class Scanner(QObject):
         tick_number = total_files / 1000 if total_files >= 1000 else 1
 
         scanned_files = ticked = last_ticked = 0
+        infected = problems = 0
 
-        for file, result in scan_path_streaming(self.scan_path, self.scan_type):
-            self.log.emit(f"{file} {result}")
+        try:
+            for file, result in scan_path_streaming(self.scan_path, self.scan_type):
+                kind = result_kind(file, result)
+                infected += kind == "infected"
+                problems += kind == "error"
+                self.log.emit(f"{file} {result}" if file else result)
+                if not file:
+                    continue
 
-            scanned_files += 1
-            if total_files >= 1000 and scanned_files - last_ticked >= tick_number:
-                last_ticked = scanned_files
-                ticked += 1
-            else:
-                ticked = min(ticked + (1000 / total_files), 1000)
-            self.progress.emit(int(ticked))
+                scanned_files += 1
+                if total_files >= 1000 and scanned_files - last_ticked >= tick_number:
+                    last_ticked = scanned_files
+                    ticked += 1
+                else:
+                    ticked = min(ticked + (1000 / total_files), 1000)
+                self.progress.emit(int(ticked))
+        except Exception as e:
+            self.log.emit(f"SCAN FAILED: {e}")
+            self.finished.emit()
+            self.status.emit("Scan failed, files were NOT checked (see log)")
+            return
 
         set_last_time_scanned()
         self.finished.emit()
+        summary = f"{infected} threat(s) found" if infected else "No threats found"
+        if problems:
+            summary += f", {problems} item(s) couldn't be scanned"
+        self.status.emit(f"Completed: {summary}")
 
 class CircularProgress(QWidget):
     def __init__(self, parent=None, thickness=10):
@@ -164,8 +181,8 @@ class ClamPage(QWidget):
 
         self.scan_worker.finished.connect(self.scan_thread.quit)
         self.scan_worker.finished.connect(self._load_db_info)
-        self.scan_worker.finished.connect(lambda: self.status1.setText("Completed!"))
         self.scan_worker.finished.connect(lambda: self.status2.setText(f"Last scan: {get_last_time_scanned()}"))
+        self.scan_worker.status.connect(self.status1.setText)
 
         if scan_type == "quick":
             # If it's a quick scan check if there are any more quick scan paths to scan
