@@ -57,7 +57,7 @@ def result_kind(file, result):
         return "clean"
     return "error"
 
-def scan_path_streaming(path: str, scan_type="standard"):
+def scan_path_streaming(path: str):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
@@ -80,30 +80,20 @@ def scan_path_streaming(path: str, scan_type="standard"):
     if os.path.isdir(path):
         cmd.append("-r")
 
-    if scan_type == "quick":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/quick/"):
-            cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/clam/quick/"+feed)
-
-    elif scan_type == "standard":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/standard/"):
-            cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/clam/standard/"+feed)
-
-    elif scan_type == "deep":
-        for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/deep/"):
-            cmd.append("-d")
-            cmd.append(str(Path.home())+"/.menoa/feeds/clam/deep/"+feed)
-
-    # Custom feeds are used in every scan type. A missing one is skipped, passing it to clamscan would make it load nothing at all
+    # Every scan type uses every configured database. A missing default stops the scan, without any -d clamscan would silently use the system database
+    databases = []
     for index, feed in list_feeds().items():
-        if index in DEFAULT_CLAM_FEEDS:
-            continue
         feed_path = os.path.expanduser(feed["local_path"])
         if os.path.exists(feed_path):
-            cmd += ["-d", feed_path]
+            databases += ["-d", feed_path]
+        elif index in DEFAULT_CLAM_FEEDS:
+            raise Exception(f"ClamAV database {feed_path} isn't downloaded, run `menoa clam reload`")
         else:
             yield (None, f"Custom feed {index} skipped, {feed_path} doesn't exist (run `menoa clam reload {index}`)")
+
+    if not databases:
+        raise Exception("No ClamAV databases in ~/.menoa/config.toml")
+    cmd += databases
 
     cmd.append(path)
 
@@ -141,33 +131,31 @@ def scan_path_streaming(path: str, scan_type="standard"):
     if summary.get("Known viruses", "0") == "0":
         raise Exception("No malware signatures could be loaded, so nothing was scanned: " + " | ".join(messages[-5:]))
 
-def get_clamav_version() -> str:
-    """Return the version of clamscan if available."""
-    if not is_clamscan_available():
-        raise Exception("Clamscan is not available") 
-
-    try:
-        result = subprocess.run(["clamscan", "-V"], capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
-        return None
-
 def get_database_version():
-    # Returns the database patch version and when it was last changed
+    """
+    Returns (version, build date) of Menoa's daily database, read from its header so clamscan isn't needed
+    """
 
-    full = get_clamav_version().split("/")
+    path = os.path.expanduser(list_feeds().get("default_daily", {}).get("local_path", "~/.menoa/feeds/clam/daily.cvd"))
+    try:
+        with open(path, "rb") as f:
+            # ClamAV-VDB:build date:version:signatures:functionality level:md5:signature:builder:build time
+            header = f.read(512).decode("ascii", "replace").split(":")
+    except FileNotFoundError:
+        return ("Not downloaded", "never")
 
-    return (full[1], full[2])
+    if header[0] != "ClamAV-VDB" or len(header) < 3:
+        return ("Unreadable", "unknown")
+    return (header[2], header[1])
 
 def get_last_time_scanned():
     # Returns the last time the system was scanned
 
-    last_scanned = ""
-
-    with open(str(Path.home())+"/.menoa/clam_last_scanned", "r") as file:
-        last_scanned = file.read()
-
-    return last_scanned
+    try:
+        with open(str(Path.home())+"/.menoa/clam_last_scanned", "r") as file:
+            return file.read()
+    except FileNotFoundError:
+        return "Never"
 
 def set_last_time_scanned():
     # Updates the last time the system was scanned

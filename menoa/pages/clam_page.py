@@ -14,9 +14,6 @@ class Scanner(QObject):
     def set_scan_path(self, path):
         self.scan_path = path
 
-    def set_scan_type(self, scan_type):
-        self.scan_type = scan_type
-
     @Slot()
     def scan(self):
         total_files = max(get_scan_total(self.scan_path), 1)
@@ -24,7 +21,7 @@ class Scanner(QObject):
         infected = problems = 0
 
         try:
-            for file, result in scan_path_streaming(self.scan_path, self.scan_type):
+            for file, result in scan_path_streaming(self.scan_path):
                 kind = result_kind(file, result)
                 infected += kind == "infected"
                 problems += kind == "error"
@@ -166,7 +163,6 @@ class ClamPage(QWidget):
         self.log_box.append(f"Starting scan: {path}")
         self.scan_worker = Scanner()
         self.scan_worker.set_scan_path(path)
-        self.scan_worker.set_scan_type(scan_type)
 
         self.scan_thread = QThread()
         self.scan_worker.moveToThread(self.scan_thread)

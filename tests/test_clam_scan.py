@@ -8,8 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["HOME"] = tempfile.mkdtemp()
-(Path.home() / ".menoa" / "feeds" / "clam" / "standard").mkdir(parents=True)
-(Path.home() / ".menoa" / "config.toml").write_text('[clam_feeds.default_main]\nlocal_path = "~/.menoa/feeds/clam/main.cvd"\n')
+CLAM_DIR = Path.home() / ".menoa" / "feeds" / "clam"
+CLAM_DIR.mkdir(parents=True)
+DEFAULT_DBS = [str(CLAM_DIR / f"{db}.cvd") for db in ("daily", "main", "bytecode")]
+for db in ("daily", "main", "bytecode"):
+    (Path.home() / ".menoa" / "config.toml").open("a").write(f'[clam_feeds.default_{db}]\nlocal_path = "~/.menoa/feeds/clam/{db}.cvd"\n')
+    # Real header layout, padded to 512 bytes like a .cvd
+    (CLAM_DIR / f"{db}.cvd").write_bytes(b"ClamAV-VDB:20 Oct 2026 07-41 +0000:28160:2077386:90:md5:sig:svc.clamav-publisher:1792482060".ljust(512))
 
 FAKE_BIN = Path(tempfile.mkdtemp())
 ARGS_FILE = FAKE_BIN / "args"
@@ -126,7 +131,6 @@ def test_gui_progress():
         fake(output, code)
         scanner = Scanner()
         scanner.set_scan_path(str(folder))
-        scanner.set_scan_type("standard")
         values = []
         scanner.progress.connect(values.append)
         scanner.scan()
@@ -160,10 +164,49 @@ def test_custom_feeds_used():
     list(clam_utils.scan_path_streaming(tempfile.gettempdir()))
     args = ARGS_FILE.read_text().splitlines()
     assert args[args.index(str(Path.home() / "custom.hdb")) - 1] == "-d", args
-    assert not any("default_main" in a or a.endswith("main.cvd") for a in args)  # defaults still come from the scan type folders
+    for db in DEFAULT_DBS:  # A custom feed is added to the ClamAV databases, never replaces them
+        assert args[args.index(db) - 1] == "-d", args
 
     clam_utils.remove_feed("custom")
     server.shutdown()
+
+
+def test_scans_use_menoa_databases():
+    fake(CLEAN, 0)
+    scan_all()
+    args = ARGS_FILE.read_text().splitlines()
+    assert args == ["-r", "-d", DEFAULT_DBS[0], "-d", DEFAULT_DBS[1], "-d", DEFAULT_DBS[2], tempfile.gettempdir()], args
+
+    # Without a -d clamscan would fall back to the system database, so a missing download stops the scan
+    os.rename(DEFAULT_DBS[0], DEFAULT_DBS[0] + ".bak")
+    try:
+        scan_all()
+        assert False, "missing database should have raised"
+    except Exception as e:
+        assert "isn't downloaded" in str(e) and "menoa clam reload" in str(e), e
+    finally:
+        os.rename(DEFAULT_DBS[0] + ".bak", DEFAULT_DBS[0])
+
+
+def test_database_version_without_clamscan():
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages.clam_page import ClamPage
+
+    path = os.environ["PATH"]
+    os.environ["PATH"] = "/nonexistent"  # No clamscan anywhere
+    try:
+        assert clam_utils.get_database_version() == ("28160", "20 Oct 2026 07-41 +0000")
+        app = QApplication.instance() or QApplication([])
+        page = ClamPage()
+        assert "DB Patch: 28160" in page.status1.text()
+
+        os.rename(DEFAULT_DBS[0], DEFAULT_DBS[0] + ".bak")
+        assert clam_utils.get_database_version() == ("Not downloaded", "never")
+        page = ClamPage()
+        assert "Not downloaded" in page.status1.text()
+        os.rename(DEFAULT_DBS[0] + ".bak", DEFAULT_DBS[0])
+    finally:
+        os.environ["PATH"] = path
 
 
 if __name__ == "__main__":
@@ -173,4 +216,6 @@ if __name__ == "__main__":
     test_cli_exit_codes()
     test_scan_total_matches_clamscan_lines()
     test_gui_progress()
+    test_scans_use_menoa_databases()
+    test_database_version_without_clamscan()
     print("All clam scan checks passed")

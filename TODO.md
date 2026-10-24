@@ -22,7 +22,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [x] **8. Custom clam feeds are never used in scans**: custom feeds from the config are passed to clamscan in every scan type (missing ones are skipped with a warning instead of breaking the scan); `utils` import restored so `clam reload <custom>` works; `--local-path` stored absolute. Verified real clamscan detects a file via a custom .hdb feed
 - [x] **9. `menoa init` always overwrites `config.toml`**
 - [x] **10. `cli.py` is a SyntaxError on Python 3.11**: nested same-quote f-strings in the `clam delay` / `network delay` commands. Fixed, every file in `menoa/`, `tests/` and `setup.py` parses on a real 3.11
-- [ ] **11. GUI won't open without clamscan or a system DB**; it also shows the system DB version, not Menoa's ([clam_utils.py:96](menoa/utils/clam_utils.py#L96), [109](menoa/utils/clam_utils.py#L109))
+- [x] **11. GUI won't open without clamscan or a system DB**; it also shows the system DB version, not Menoa's. Fixed, the version is read from Menoa's `daily.cvd` header. Found with it: scans only used Menoa's databases through symlinks in `quick/` `standard/` `deep/`, and where those were missing clamscan silently used the system database (or only custom feeds). Every scan now passes every configured database, and a missing default stops the scan
 - [ ] **12. Full scan of `/` walks `/proc`, `/sys`, `/dev`** (clamscan call and `get_scan_total`)
 
 ## Medium

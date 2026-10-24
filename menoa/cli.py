@@ -81,7 +81,7 @@ def scan(path):
     print(total_files)
 
     #print(total_files)
-    console.print("[yellow]Loading signatures from (get used feeds here)...[/yellow]", end='')
+    console.print(f"[yellow]Loading signatures from {', '.join(clam_utils.list_feeds())}...[/yellow]", end='')
     progress = None
 
     first = True

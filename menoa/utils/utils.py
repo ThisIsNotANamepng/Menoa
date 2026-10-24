@@ -195,7 +195,7 @@ def initialize_config(progress=None):
     [shell]
 
     [clam_feeds.default_daily]
-    url = "http://127.0.0.1:5000/feeds/clam/daily.cvd"
+    url = "https://database.clamav.net/daily.cvd" # Official ClamAV database, updated with cvdupdate (no root needed)
     name = "Default daily.cvd ClamAV feed"
     description = "Daily signatures bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/daily.cvd"
@@ -204,7 +204,7 @@ def initialize_config(progress=None):
     current_version = 1
 
     [clam_feeds.default_main]
-    url = "http://127.0.0.1:5000/feeds/clam/main.cvd"
+    url = "https://database.clamav.net/main.cvd" # Official ClamAV database, updated with cvdupdate (no root needed)
     name = "Default main.cvd ClamAV feed"
     description = "Main signatures database bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/main.cvd"
@@ -213,7 +213,7 @@ def initialize_config(progress=None):
     current_version = 1
 
     [clam_feeds.default_bytecode]
-    url = "http://127.0.0.1:5000/feeds/clam/bytecode.cvd"
+    url = "https://database.clamav.net/bytecode.cvd" # Official ClamAV database, updated with cvdupdate (no root needed)
     name = "Default bytecode.cvd ClamAV feed"
     description = "Bytecode database bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/bytecode.cvd"
@@ -234,7 +234,7 @@ def initialize_config(progress=None):
         with open(config_path, "w") as f:
             f.write(default_string)
 
-    for d in ["feeds/clam/quick", "feeds/clam/standard", "feeds/clam/deep", "feeds/network"]:
+    for d in ["feeds/clam", "feeds/network"]:
         os.makedirs(home_path + "/.menoa/" + d, exist_ok=True)
 
     # = Downloads
@@ -263,28 +263,6 @@ def initialize_config(progress=None):
     step("Downloading network threat feeds", network_feeds)
     if not os.path.exists(home_path + "/.menoa/process_scanner.pkl"):
         step("Downloading process scanning model", lambda: download_process_model(progress))
-
-    # Symlink into quick/standard/deep
-    clam_path = home_path+"/.menoa/feeds/clam"
-
-    if not os.path.islink(clam_path + "/quick/daily.cvd"):
-        os.symlink(clam_path + "/daily.cvd", clam_path + "/quick/daily.cvd")
-    if not os.path.islink(clam_path + "/quick/bytecode.cvd"):
-        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/quick/bytecode.cvd")
-
-    if not os.path.islink(clam_path + "/standard/main.cvd"):
-        os.symlink(clam_path + "/main.cvd", clam_path + "/standard/main.cvd")
-    if not os.path.islink(clam_path + "/standard/daily.cvd"):
-        os.symlink(clam_path + "/daily.cvd", clam_path + "/standard/daily.cvd")
-    if not os.path.islink(clam_path + "/standard/bytecode.cvd"):
-        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/standard/bytecode.cvd")
-
-    if not os.path.islink(clam_path + "/deep/main.cvd"):
-        os.symlink(clam_path + "/main.cvd", clam_path + "/deep/main.cvd")
-    if not os.path.islink(clam_path + "/deep/daily.cvd"):
-        os.symlink(clam_path + "/daily.cvd", clam_path + "/deep/daily.cvd")
-    if not os.path.islink(clam_path + "/deep/bytecode.cvd"):
-        os.symlink(clam_path + "/bytecode.cvd", clam_path + "/deep/bytecode.cvd")
 
     if not os.path.exists(home_path + "/.menoa/clam_last_scanned"):
         with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
