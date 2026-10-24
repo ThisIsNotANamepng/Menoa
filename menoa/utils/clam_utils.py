@@ -1,6 +1,7 @@
 import subprocess
 import shutil
 import os
+import re
 from typing import List, Tuple, Optional
 from datetime import datetime
 import tomli, tomli_w
@@ -79,6 +80,7 @@ def scan_path_streaming(path: str):
 
     if os.path.isdir(path):
         cmd.append("-r")
+        cmd += [f"--exclude-dir={exclude_regex(mount)}" for mount in skipped_mounts(path)]
 
     # Every scan type uses every configured database. A missing default stops the scan, without any -d clamscan would silently use the system database
     databases = []
@@ -205,23 +207,58 @@ def set_last_time_scanned():
     with open(str(Path.home())+"/.menoa/clam_last_scanned", "w") as file:
         file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
 
-def get_scan_total(path):
+# Mounts scans don't go into: kernel views with no real files, network shares (slow, and another machine's to scan),
+# and merged container/portal views of files that are already scanned where they're stored. tmpfs and /dev (devtmpfs) are scanned, /tmp and /dev/shm live there
+SKIPPED_FILESYSTEMS = {
+    "proc", "sysfs", "devpts", "cgroup", "cgroup2", "securityfs", "pstore", "efivarfs", "bpf", "tracefs", "debugfs",
+    "configfs", "mqueue", "hugetlbfs", "fusectl", "binfmt_misc", "autofs", "nsfs", "rpc_pipefs", "selinuxfs", "fuse.lxcfs",
+    "nfs", "nfs4", "cifs", "smb3", "smbfs", "ceph", "9p", "afs", "davfs", "fuse.sshfs", "fuse.gvfsd-fuse", "fuse.rclone", "fuse.glusterfs",
+    "overlay", "fuse.fuse-overlayfs", "fuse.portal",
+}
+
+def skipped_mounts(path):
+    """
+    Returns the mount points inside `path` (not `path` itself, scanning one directly still works) with a filesystem in SKIPPED_FILESYSTEMS
+    """
+
+    mounts = {}
+    try:
+        with open("/proc/self/mounts") as f:
+            for line in f:
+                _, mount_point, fstype = line.split()[:3]
+                # Spaces and tabs are octal escaped. A later mount on the same point hides the earlier one, like a real filesystem on an autofs point
+                mounts[re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), mount_point)] = fstype
+    except OSError:
+        return []
+
+    prefix = os.path.abspath(path).rstrip("/") + "/"
+    return sorted(m for m, fstype in mounts.items() if fstype in SKIPPED_FILESYSTEMS and m.startswith(prefix))
+
+def exclude_regex(directory):
+    # clamscan matches --exclude-dir as a POSIX regex against the full path, without a trailing slash
+    return "^" + re.sub(r"([.\[\]{}()\\*+?^$|])", r"\\\1", directory) + "$"
+
+def get_scan_total(path, skip=None):
     """
     Counts the result lines clamscan will print for `path`, for progress bars:
-    one per file and per symlink (it doesn't follow them), one per directory it can't open, none for fifos or sockets
+    one per file and per symlink (it doesn't follow them), one per directory it can't open or skips (skipped_mounts), none for fifos or sockets
     """
 
     if not os.path.isdir(path):
         return 1
 
+    if skip is None:
+        path = os.path.abspath(path)
+        skip = set(skipped_mounts(path))
+
     total = 0
     try:
         with os.scandir(path) as entries:
             for entry in entries:
-                if entry.is_symlink() or entry.is_file(follow_symlinks=False):
+                if entry.is_symlink() or entry.is_file(follow_symlinks=False) or entry.path in skip:
                     total += 1
                 elif entry.is_dir(follow_symlinks=False):
-                    total += get_scan_total(entry.path)
+                    total += get_scan_total(entry.path, skip)
     except OSError:
         return 1  # clamscan prints "Can't open directory." once for it
     return total

@@ -23,7 +23,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [x] **9. `menoa init` always overwrites `config.toml`**
 - [x] **10. `cli.py` is a SyntaxError on Python 3.11**: nested same-quote f-strings in the `clam delay` / `network delay` commands. Fixed, every file in `menoa/`, `tests/` and `setup.py` parses on a real 3.11
 - [x] **11. GUI won't open without clamscan or a system DB**; it also shows the system DB version, not Menoa's. Fixed, the version is read from Menoa's `daily.cvd` header. Found with it: scans only used Menoa's databases through symlinks in `quick/` `standard/` `deep/`, and where those were missing clamscan silently used the system database (or only custom feeds). Every scan now passes every configured database, and a missing default stops the scan
-- [ ] **12. Full scan of `/` walks `/proc`, `/sys`, `/dev`** (clamscan call and `get_scan_total`)
+- [x] **12. Full scan of `/` walks `/proc`, `/sys`, `/dev`** (clamscan call and `get_scan_total`). Fixed, every scan skips mounts inside it by filesystem type (`SKIPPED_FILESYSTEMS`: kernel views, network shares, merged container/portal views); `/dev`, tmpfs, snaps and USB drives are still scanned
 
 ## Medium
 
@@ -67,3 +67,4 @@ Ordered by priority. Work top to bottom, one at a time.
   - Background updates without root: a user systemd timer (`systemctl --user`) running `menoa clam reload` a few times a day, same mechanism as the network feeds and the roadmap's background clock. ClamAV rate-limits mirrors (cvdupdate keeps its own cooldown), so not more often than every few hours
   - Desktop notification (`utils.alert`) at most once a day when signatures pass 7 days, or when updates keep failing (record the last successful update and last error so the two can be told apart)
   - `update_clamav_feed` always writes to `~/.menoa/feeds/clam`, ignoring the default feeds' `local_path` in the config
+- [ ] **Full scans without root.** A non-root `menoa clam full` can't read much of `/`, so it reports thousands of "couldn't be scanned" items. Options: run as root (pkexec from the GUI, sudo from the CLI), or skip root-only system dirs quietly and say that system files need a root scan

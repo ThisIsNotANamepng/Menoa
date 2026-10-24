@@ -298,6 +298,54 @@ def test_gui_age_and_update():
     assert run_with_progress(lambda progress: 1 / 0, "Updating...") == ["division by zero"]
 
 
+FAKE_MOUNTS = r"""/dev/nvme0n1p2 / ext4 rw 0 0
+proc /proc proc rw 0 0
+sysfs /sys sysfs rw 0 0
+debugfs /sys/kernel/debug debugfs rw 0 0
+udev /dev devtmpfs rw 0 0
+devpts /dev/pts devpts rw 0 0
+tmpfs /dev/shm tmpfs rw 0 0
+tmpfs /tmp tmpfs rw 0 0
+systemd-1 /boot/efi autofs rw 0 0
+/dev/nvme0n1p1 /boot/efi vfat rw 0 0
+systemd-1 /mnt/backup autofs rw 0 0
+nas:/share /mnt/nas nfs4 rw 0 0
+//nas/media /mnt/my\040share cifs rw 0 0
+/dev/loop1 /snap/firefox/1 squashfs ro 0 0
+/dev/sdb1 /media/jack/USB vfat rw 0 0
+overlay /var/lib/docker/overlay2/abc/merged overlay rw 0 0
+"""
+
+
+def test_skipped_mounts():
+    from unittest import mock
+    with mock.patch("builtins.open", mock.mock_open(read_data=FAKE_MOUNTS)):
+        # Virtual, network and merged views are skipped. /dev, tmpfs, snaps, USB drives and a mounted autofs point are scanned
+        assert clam_utils.skipped_mounts("/") == [
+            "/dev/pts", "/mnt/backup", "/mnt/my share", "/mnt/nas", "/proc", "/sys", "/sys/kernel/debug", "/var/lib/docker/overlay2/abc/merged"]
+        assert clam_utils.skipped_mounts("/sys/") == ["/sys/kernel/debug"]
+        assert clam_utils.skipped_mounts("/proc") == []  # Scanning one directly still works
+        assert clam_utils.skipped_mounts("/mn") == []    # Not a prefix match on names
+
+
+def test_scans_skip_mounts():
+    from unittest import mock
+    tree = Path(tempfile.mkdtemp())
+    for name in ["a", "virtual/b", "virtual/c", "virtual.d/e"]:
+        (tree / name).parent.mkdir(exist_ok=True)
+        (tree / name).write_text("x")
+
+    with mock.patch.object(clam_utils, "skipped_mounts", lambda path: [str(tree / "virtual")]):
+        # clamscan prints one "Excluded" line for a skipped directory, and its regex mustn't match virtual.d
+        assert clam_utils.get_scan_total(str(tree)) == 3
+        fake(CLEAN, 0)
+        list(clam_utils.scan_path_streaming(str(tree)))
+        args = ARGS_FILE.read_text().splitlines()
+        assert args[:2] == ["-r", f"--exclude-dir=^{tree}/virtual$"], args
+        assert clam_utils.exclude_regex("/x/virtual") == "^/x/virtual$"
+        assert clam_utils.exclude_regex("/a.b+c(d)[e]{f}^g$h|i*j?k") == r"^/a\.b\+c\(d\)\[e\]\{f\}\^g\$h\|i\*j\?k$"
+
+
 if __name__ == "__main__":
     test_custom_feeds_used()
     test_good_scan_classification()
@@ -311,4 +359,6 @@ if __name__ == "__main__":
     test_outdated_warning()
     test_status_exit_codes()
     test_gui_age_and_update()
+    test_skipped_mounts()
+    test_scans_skip_mounts()
     print("All clam scan checks passed")
