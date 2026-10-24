@@ -241,9 +241,9 @@ def clam_set_delay(update, seconds=False):
     import menoa.utils.clam_utils as clam_utils
 
     if not seconds and update:
-        console.print(f"[green]Feed update delay: {clam_utils.get_delay()["feed_update_delay"]}[/green]")
+        console.print(f"[green]Feed update delay: {clam_utils.get_delay()['feed_update_delay']}[/green]")
     elif not seconds and not update:
-        console.print(f"[green]Scan delay: {clam_utils.get_delay()["scan_delay"]}[/green]")
+        console.print(f"[green]Scan delay: {clam_utils.get_delay()['scan_delay']}[/green]")
     elif seconds and update:
         clam_utils.set_feed_update_delay(seconds)
         console.print(f"[green]Set feed update delay to {seconds}")
@@ -381,9 +381,9 @@ def network_set_delay(update, seconds=False):
     import menoa.utils.network_utils as network_utils
     
     if not seconds and update:
-        console.print(f"[green]Feed update delay: {network_utils.get_delay()["feed_update_delay"]}[/green]")
+        console.print(f"[green]Feed update delay: {network_utils.get_delay()['feed_update_delay']}[/green]")
     elif not seconds and not update:
-        console.print(f"[green]Scan delay: {network_utils.get_delay()["scan_delay"]}[/green]")
+        console.print(f"[green]Scan delay: {network_utils.get_delay()['scan_delay']}[/green]")
     elif seconds and update:
         network_utils.set_feed_update_delay(seconds)
         console.print(f"[green]Set feed update delay to {seconds}")
