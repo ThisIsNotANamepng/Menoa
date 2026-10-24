@@ -43,9 +43,15 @@ menoa network reload
 
 To write your own server, serve a `plain` file.
 
+### Hosting feeds with less bandwidth
+
+- Menoa sends the `ETag`/`Last-Modified` it got last time, so an unchanged file costs a tiny `304 Not Modified`. nginx and S3-style object storage do this on their own
+- Files served with `Content-Encoding: gzip` are decompressed by Menoa. For object storage, upload the gzipped file with that header, e.g. `gzip -9k main.txt && s3cmd put --add-header="Content-Encoding: gzip" --mime-type=text/plain main.txt.gz s3://<bucket>/network/main.txt`
+- Your own process model's `model_url` can end in `.xz`, it's decompressed (`xz -9k model.pkl`, about 6x smaller). Its signature stays at `model.pkl.sig`
+
 ## Process Models
 
-Menoa's own model is always checked against Menoa's key before it's loaded, since loading a model runs code from it. To use your own model:
+Menoa's own model ships inside Menoa (new models come with Menoa updates), and it's checked against a hash in Menoa's code before it's loaded, since loading a model runs code from it. To use your own model:
 
 ```
 menoa process model ./my_model.pkl     # A local path or a URL, loaded unsigned since you chose it (scans point this out, -q hides it)
@@ -108,8 +114,6 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
 - [ ] Add comments, clean up code
 - [ ] Right now the attestation get package version function only uses pacman, add more package managers
-- [ ] Right now downloading versioned feeds combines the temp downloaded file and main file, it put all info on one line, so the feed file is one long line, fix it with newlines
-- [ ] Right now when downloading a versioned feed it doesn't mark the new patch version anywhere, add a place for the current patch version in the config and make it overwrite it when updated 
 - [ ] Update the last_checked column in the attestation database
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 - [x] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan

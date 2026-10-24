@@ -1,2 +1,2 @@
 include README.md LICENSE SECURITY.md
-recursive-include menoa *.qss *.png *.svg *.ico *.txt
+recursive-include menoa *.qss *.png *.svg *.ico *.txt *.xz

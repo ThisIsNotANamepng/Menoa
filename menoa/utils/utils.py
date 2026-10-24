@@ -7,6 +7,7 @@ import os
 import pathlib
 import shutil
 import sys
+import json
 import requests
 from urllib.parse import unquote
 from tqdm.auto import tqdm
@@ -36,88 +37,83 @@ async def desktop_notification(title, text) -> None:
         icon=icon
     )
 
-def get_patch_number(url):
-    # Takes a url and returns the patch number
+def _download_cache_path():
+    return Path.home() / ".menoa" / "download_cache.json"
 
-    return int(url.split("/")[-1].split("_")[1].split(".")[0])
-
-
-def combine_files(source_file, destination_file):
+def _load_download_cache():
     try:
-        with open(source_file, 'rb') as source_file:
-            with open(destination_file, 'ab') as destination_file:
-                while True:
-                    chunk = source_file.read(1024)
-                    if not chunk:
-                        break
-                    destination_file.write(chunk)
-        
-    except Exception as e:
-        print(f"Error: {e}")
+        with open(_download_cache_path()) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
 
-def progress_download(url, filename, progress=None):
+def _write_download_cache(cache):
+    path = _download_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cache, indent=1))
+    os.replace(tmp, path)
+
+def cached_headers(stored_file, url):
+    """
+    Headers asking the server to only send `url` if it changed since it was saved to `stored_file` (it answers 304 otherwise)
+    """
+    entry = _load_download_cache().get(str(stored_file))
+    if not entry or entry.get("url") != url or not os.path.exists(stored_file):
+        return {}
+    headers = {"If-None-Match": entry.get("etag"), "If-Modified-Since": entry.get("last_modified")}
+    return {k: v for k, v in headers.items() if v}
+
+def save_validators(stored_file, url, response):
+    # Call only once the response is stored in stored_file, or an unchanged reply later would keep a copy that was never written
+    cache = _load_download_cache()
+    cache[str(stored_file)] = {"url": url, "etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
+    _write_download_cache(cache)
+
+def forget_validators(stored_file):
+    # The next request downloads stored_file in full again
+    cache = _load_download_cache()
+    if cache.pop(str(stored_file), None) is not None:
+        _write_download_cache(cache)
+
+def progress_download(url, filename, progress=None, skip_unchanged=False):
     """
     Downloads `url` to `filename`, showing a terminal progress bar, or calling progress(text, done_bytes, total_bytes) instead if given
+    With skip_unchanged, a file the server says hasn't changed since last time isn't downloaded again, and None is returned
     """
+    path = pathlib.Path(filename).expanduser().resolve()
+    name = unquote(url.rsplit("/", 1)[-1]).rsplit("/", 1)[-1]
     print("Downloading", url)
 
-    r = requests.get(url, stream=True, allow_redirects=True, timeout=60)
+    headers = cached_headers(path, url) if skip_unchanged else {}
+    r = requests.get(url, stream=True, allow_redirects=True, timeout=60, headers=headers)
+    if r.status_code == 304:
+        print(f"{name} hasn't changed")
+        return None
     if r.status_code != 200:
         r.raise_for_status()
         raise RuntimeError(f"Request to {url} returned status code {r.status_code}")
+    # The size on the wire, compressed if the server sends Content-Encoding: gzip
     file_size = int(r.headers.get('Content-Length', 0))
 
-    path = pathlib.Path(filename).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    name = unquote(url.rsplit("/", 1)[-1]).rsplit("/", 1)[-1]
 
     # Write then rename so an interrupted download can't leave a truncated file in place
     tmp = path.with_name(path.name + ".part")
     done = 0
     with tqdm(total=file_size or None, unit="B", unit_scale=True, desc=name, disable=progress is not None) as bar, tmp.open("wb") as f:
-        for chunk in r.iter_content(chunk_size=1 << 16):
+        for chunk in r.iter_content(chunk_size=1 << 16):  # Decompressed by requests
             f.write(chunk)
-            done += len(chunk)
-            bar.update(len(chunk))
+            wire = r.raw.tell()  # Bytes received, so progress matches Content-Length
+            bar.update(wire - done)
+            done = wire
             if progress:
                 progress(f"Downloading {name}", done, file_size)
     os.replace(tmp, path)
 
+    if skip_unchanged:
+        save_validators(path, url, r)
     return path
-
-def progress_patch_download(url, filename, current_version):
-    """
-    Downloads a feed patch with a progress bar
-    """
-    try:
-        response = requests.post(
-            url,
-            json={'current_version': current_version}
-        )
-        print(response.text)
-        response.raise_for_status()
-        #print(f"Response: {response.text}")
-        urls = response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Request failed: {e}")
-
-    print(response.text)
-
-    try: urls = urls["urls"]
-    except: raise Exception(f"Cannot reach {url}")
-    sorted_urls = sorted(urls, key=get_patch_number)
-    new_version = 0
-
-    for url in sorted_urls:
-        # Download patch into /tmp file, combine with main feed file
-        new_version = get_patch_number(url)
-        print(f"Patch {new_version}")
-
-        progress_download(url, "/tmp/menoa-tmp-feed-download")
-        combine_files("/tmp/menoa-tmp-feed-download", filename)
-        os.remove("/tmp/menoa-tmp-feed-download")
-
-    return new_version
 
 def initialize_desktop_file():
     """
@@ -177,8 +173,9 @@ def initialize_config(progress=None):
     feed_update_delay = 86400 # 1 day
     enabled = true
     threshold = 0.7
-    model_url = "https://menoa-feeds.us-ord-1.linodeobjects.com/process%2Fprocess_analyses.pkl" # A URL or local path, `menoa process model` changes it
-    model_public_key = "" # Your own model_url must be signed with this key (`menoa process sign`), its signature is at model_url + ".sig". Empty: not checked. Menoa's model is always checked against Menoa's key
+    # Menoa's model is used unless you set your own, see `menoa process model`:
+    # model_url = "<a URL or local path, a .xz is decompressed>"
+    # model_public_key = "<only load it if signed with this key, see `menoa process sign`>"
 
     [attestation]
     scan_delay = 600 # 10 minutes
@@ -194,8 +191,6 @@ def initialize_config(progress=None):
     description = "Daily signatures bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/daily.cvd"
     last_refreshed = 1970-01-01T00:00:00
-    supports_versioning = true
-    current_version = 1
 
     [clam_feeds.default_main]
     url = "https://database.clamav.net/main.cvd" # Official ClamAV database, updated with cvdupdate (no root needed)
@@ -203,8 +198,6 @@ def initialize_config(progress=None):
     description = "Main signatures database bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/main.cvd"
     last_refreshed = 1970-01-01T00:00:00
-    supports_versioning = true
-    current_version = 1
 
     [clam_feeds.default_bytecode]
     url = "https://database.clamav.net/bytecode.cvd" # Official ClamAV database, updated with cvdupdate (no root needed)
@@ -212,8 +205,6 @@ def initialize_config(progress=None):
     description = "Bytecode database bundled with ClamAV"
     local_path = "~/.menoa/feeds/clam/bytecode.cvd"
     last_refreshed = 1970-01-01T00:00:00
-    supports_versioning = true
-    current_version = 1
 
     [network_feeds.main]
     format = "plain"
@@ -234,7 +225,7 @@ def initialize_config(progress=None):
     # = Downloads
     from menoa.utils.clam_utils import update_all_feeds as clam_update_all_feeds
     from menoa.utils.network_utils import update_all_feeds as network_update_all_feeds
-    from menoa.utils.process_utils import download_process_model
+    from menoa.utils.process_utils import install_process_model
 
     failures = []
 
@@ -256,7 +247,7 @@ def initialize_config(progress=None):
 
     step("Downloading network threat feeds", network_feeds)
     if not os.path.exists(home_path + "/.menoa/process_scanner.pkl"):
-        step("Downloading process scanning model", lambda: download_process_model(progress))
+        step("Installing process scanning model", lambda: install_process_model(progress))
 
     # = Attestation
     import menoa.utils.attestation_utils as attestation_utils

@@ -3,7 +3,7 @@ Checks that process scan results land on the right PIDs and that live features m
 Run with `python tests/test_process_scan.py` (or pytest). Uses a stub model, so no real model is needed
 """
 
-import contextlib, io, json, os, subprocess, sys, tempfile, threading, time
+import contextlib, hashlib, io, json, os, subprocess, sys, tempfile, threading, time
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from unittest import mock
@@ -134,9 +134,9 @@ def test_untrusted_models_never_run():
         signature.write_text("not json")
         assert_refused("isn't signed by model_public_key", marker)
 
-    with model_home() as model:  # No key set: only the built-in model
+    with model_home() as model:  # Menoa's model: a replaced file is swapped back for the bundled model, not run
         joblib.dump(Planted(str(marker)), model)
-        assert_refused("isn't Menoa's built-in model", marker)
+        assert process_utils.load_model()["metadata"]["version"] == "0.2.0" and not marker.exists()
 
 
 def test_own_models_load_unsigned():
@@ -201,7 +201,6 @@ def test_cli_keygen_and_sign():
 def test_cli_model():
     from click.testing import CliRunner
     from menoa.cli import cli
-    import hashlib
 
     folder = Path(tempfile.mkdtemp())
     joblib.dump({"model": "own", "metadata": {"version": "dev"}}, folder / "own.pkl")
@@ -229,30 +228,25 @@ def test_cli_model():
 
         # Back to Menoa's model, which has to be the built-in one again
         menoa_sha256 = hashlib.sha256((folder / "menoa.pkl").read_bytes()).hexdigest()
-        with mock.patch.multiple(process_utils, DEFAULT_MODEL_URL=str(folder / "menoa.pkl"), BUILTIN_MODEL_SHA256=menoa_sha256):
+        with mock.patch.multiple(process_utils, BUNDLED_MODEL=folder / "menoa.pkl", BUILTIN_MODEL_SHA256=menoa_sha256):
             result = CliRunner().invoke(cli, ["process", "model", "--default"])
             assert result.exit_code == 0, result.output
             assert process_utils.load_model()["model"] == "menoa"
             assert "built-in" in CliRunner().invoke(cli, ["process", "model"]).output
 
 
-def test_menoa_model_ignores_the_config_key():
-    # Someone who can edit config.toml sets their own key, Menoa's model is still only checked against Menoa's key from the code
-    menoa_key, menoa_public = new_key()
+def test_menoa_model_is_always_the_bundled_one():
+    # Someone who can edit files as the user plants a model, signs it, and sets their key in config.toml:
+    # Menoa's model is still only ever the one bundled with Menoa (pinned by hash in the code), the planted one never runs
     attacker_key, attacker_public = new_key()
     marker = Path(tempfile.mkdtemp()) / "ran"
 
     with model_home(model_public_key=attacker_public) as model:
         joblib.dump(Planted(str(marker)), model)
         process_utils.sign_model(str(model), str(attacker_key), "9.9")
-        assert_refused("isn't Menoa's built-in model", marker)  # Before Menoa's key exists
-
-        with mock.patch.object(process_utils, "MENOA_MODEL_PUBLIC_KEY", menoa_public):
-            assert_refused("isn't signed by Menoa", marker)
-
-            joblib.dump({"model": "menoa", "metadata": {"version": "0.3.0"}}, model)
-            process_utils.sign_model(str(model), str(menoa_key))
-            assert process_utils.load_model()["model"] == "menoa"
+        assert process_utils.load_model()["metadata"]["version"] == "0.2.0"
+        assert not marker.exists(), "the planted model was run"
+        assert hashlib.sha256(model.read_bytes()).hexdigest() == process_utils.BUILTIN_MODEL_SHA256  # Extracted again
 
 
 def test_unsigned_model_warning():
@@ -287,12 +281,21 @@ def test_unsigned_model_warning():
             assert page.model_warning.text() == "" and page.model_warning.isHidden()
 
 
-def test_pinned_hash_is_the_trained_model():
+def test_bundled_model_is_the_trained_model():
+    import lzma
+    assert hashlib.sha256(lzma.decompress(process_utils.BUNDLED_MODEL.read_bytes())).hexdigest() == process_utils.BUILTIN_MODEL_SHA256
+
     # The model LinuxProcessesScanning produces, when it's checked out next to Menoa
     trained = Path(__file__).resolve().parent.parent.parent / "LinuxProcessesScanning" / "ProcessAnalyses.pkl"
     if trained.exists():
-        import hashlib
-        assert hashlib.sha256(trained.read_bytes()).hexdigest() == process_utils.BUILTIN_MODEL_SHA256
+        assert hashlib.sha256(trained.read_bytes()).hexdigest() == process_utils.BUILTIN_MODEL_SHA256, "retrained: update the bundled model and its hash"
+
+
+def test_upgrade_replaces_the_old_model():
+    # A model extracted by an older Menoa release fails the new hash, it's replaced by this release's model
+    with model_home() as model:
+        joblib.dump({"model": "old release", "metadata": {"version": "0.1.0"}}, model)
+        assert process_utils.load_model()["metadata"]["version"] == "0.2.0"
 
 
 if __name__ == "__main__":
@@ -304,7 +307,8 @@ if __name__ == "__main__":
     test_model_download()
     test_cli_keygen_and_sign()
     test_cli_model()
-    test_menoa_model_ignores_the_config_key()
+    test_menoa_model_is_always_the_bundled_one()
     test_unsigned_model_warning()
-    test_pinned_hash_is_the_trained_model()
+    test_bundled_model_is_the_trained_model()
+    test_upgrade_replaces_the_old_model()
     print("All process scan checks passed")

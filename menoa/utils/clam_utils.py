@@ -301,11 +301,21 @@ def update_feed(index):
     except KeyError:
         raise Exception("Error: Feed does not exist")
 
-    if feed["supports_versioning"]:
-        new_version = utils.progress_patch_download(feed['url'], feed["local_path"].replace("~", str(Path.home())), feed["current_version"])
-        ##TODO: Add logic to update the current_version in the config file
-    else:
-        utils.progress_download(feed['url'], feed["local_path"].replace("~", str(Path.home())))
+    # The whole file every time, replaced in one step, so signatures removed upstream are removed here too
+    utils.progress_download(feed['url'], os.path.expanduser(feed["local_path"]), skip_unchanged=True)
+    mark_refreshed([index])
+
+def mark_refreshed(indexes):
+    # Records when feeds were last downloaded, shown by `menoa clam list`
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+
+    for index in indexes:
+        if index in config["clam_feeds"]:
+            config["clam_feeds"][index]["last_refreshed"] = datetime.now().replace(microsecond=0)
+
+    with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
+        tomli_w.dump(config, f)
 
 def _streaming_get(progress):
     """
@@ -367,7 +377,9 @@ def update_clamav_feed(progress=None):
     for file_path in path.glob("*.cdiff"):
         file_path.unlink()
 
-def add_feed(index, name, url, description, local_path, supports_versioning=False, move_into_default_feed_path=True):
+    mark_refreshed(DEFAULT_CLAM_FEEDS)
+
+def add_feed(index, name, url, description, local_path, move_into_default_feed_path=True):
     """
     Adds a clam feed from the config
     if `move_into_default_feed_path` is True Menoa will try to copy the given filepath into `~/.menoa/feeds/clam/xxxx``
@@ -392,8 +404,7 @@ def add_feed(index, name, url, description, local_path, supports_versioning=Fals
         "name": name,
         "description": description,
         "local_path": local_path,
-        "last_refreshed": "1970-01-01T00:00:00",
-        "supports_versioning": supports_versioning
+        "last_refreshed": datetime(1970, 1, 1),
     }
 
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:

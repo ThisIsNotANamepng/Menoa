@@ -63,6 +63,7 @@ setup(
             "dark_style.qss",
             "light_style.qss",
             "notification_icon.png",
+            "models/*.xz",
             "utils/*.py",
             "pages/*.py"
         ],

@@ -214,15 +214,14 @@ def clam_reload_feed(feed=False):
 @click.option('--url', type=str, required=True)
 @click.option('--description', type=str, required=True)
 @click.option('--local-path', type=str, required=True)
-@click.option('--supports-versioning', is_flag=True, default=False)
 @click.option('--centralize', is_flag=True, default=False)
-def clam_add_feed(index, name, url, description, local_path, supports_versioning, centralize):
+def clam_add_feed(index, name, url, description, local_path, centralize):
     """
     Add a new Clam feed.
     """
     import menoa.utils.clam_utils as clam_utils
 
-    clam_utils.add_feed(index, name, url, description, local_path, supports_versioning, centralize)
+    clam_utils.add_feed(index, name, url, description, local_path, centralize)
     console.print(f"[green]Added {name}![/green]")
 
 @clam.command(name="remove")
@@ -252,12 +251,11 @@ def clam_list_feeds():
     table.add_column("Upstream URL", style="magenta")
     table.add_column("Local Storage", style="magenta")
     table.add_column("Last Refreshed", style="magenta")
-    table.add_column("Upstream Supports Versioning", style="magenta")
 
     feeds = clam_utils.list_feeds()
 
     for i in feeds:
-        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]), str(feeds[i]["supports_versioning"]))
+        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]))
 
     console.print(table)
 
@@ -546,7 +544,7 @@ def process_model(source, public_key, use_default):
 
     if not source and not use_default:
         settings = process_utils.get_model_settings()
-        print(f"Model: {settings['model_url']}")
+        print(f"Model: {settings['model_url'] or 'bundled with Menoa'}")
         try:
             version = process_utils.verify_model(process_utils.MODEL_PATH, process_utils.MODEL_PATH + ".sig", settings)
         except FileNotFoundError:

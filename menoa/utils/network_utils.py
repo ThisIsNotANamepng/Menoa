@@ -89,8 +89,11 @@ def update_all_feeds():
 
     return failures
 
-def read_source(url):
-    # Returns the text at a url, or at a local path ("/..." or "file://...")
+def read_source(url, stored_file=None):
+    """
+    Returns the text at a url, or at a local path ("/..." or "file://...")
+    With stored_file, returns None if the server says the url hasn't changed since it was last saved there
+    """
 
     if url.startswith("file://"):
         url = url[len("file://"):]
@@ -98,13 +101,19 @@ def read_source(url):
         with open(url, "r") as f:
             return f.read()
 
-    r = requests.get(url, timeout=60)
+    r = requests.get(url, timeout=60, headers=utils.cached_headers(stored_file, url) if stored_file else {})
+    if r.status_code == 304:
+        return None
     r.raise_for_status()
+    if stored_file:
+        # The caller stores it next, update_feed forgets these if that fails
+        utils.save_validators(stored_file, url, r)
     return r.text
 
-def fetch_feed_values(feed):
+def fetch_feed_values(feed, stored_file=None):
     """
-    Downloads a feed and returns its raw values (one candidate indicator per item), based on feed["format"]:
+    Downloads a feed and returns its raw values (one candidate indicator per item), or None if a plain/csv file hasn't changed
+    since it was saved to stored_file. Based on feed["format"]:
 
     - plain: one indicator per line, "#" starts a comment
     - csv: the value in `column`, a header name or a 0-based column number
@@ -115,10 +124,14 @@ def fetch_feed_values(feed):
     fmt = feed.get("format")
 
     if fmt == "plain":
-        return read_source(feed["url"]).splitlines()
+        text = read_source(feed["url"], stored_file)
+        return None if text is None else text.splitlines()
 
     if fmt == "csv":
-        lines = [l for l in read_source(feed["url"]).splitlines() if not l.startswith("#")]
+        text = read_source(feed["url"], stored_file)
+        if text is None:
+            return None
+        lines = [l for l in text.splitlines() if not l.startswith("#")]
         column = feed["column"]
         if isinstance(column, int):
             return [row[column] for row in csv.reader(lines) if len(row) > column]
@@ -186,24 +199,34 @@ def update_feed(index):
     except KeyError:
         raise Exception("Error: Feed does not exist")
 
-    ips = normalize_indicators(fetch_feed_values(feed))
-
-    # An empty result is almost always a misconfigured feed, don't wipe the good data from last time
-    if not ips:
-        raise Exception(f"No valid IPs found in {index}, keeping previous data")
-
-    # Write then rename so a crash mid-write can't leave a truncated feed
     path = feed_cache_path(index)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text("\n".join(sorted(ips)) + "\n")
-    os.replace(tmp, path)
+    try:
+        values = fetch_feed_values(feed, path)
+        if values is None:
+            count = get_number_of_threats_from_feed(index)  # Unchanged upstream, the stored IPs are current
+        else:
+            ips = normalize_indicators(values)
+
+            # An empty result is almost always a misconfigured feed, don't wipe the good data from last time
+            if not ips:
+                raise Exception(f"No valid IPs found in {index}, keeping previous data")
+
+            # Write then rename so a crash mid-write can't leave a truncated feed
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text("\n".join(sorted(ips)) + "\n")
+            os.replace(tmp, path)
+            count = len(ips)
+    except Exception:
+        # So the next refresh downloads the feed in full instead of trusting a copy that wasn't stored
+        utils.forget_validators(path)
+        raise
 
     config["network_feeds"][index]["last_refreshed"] = datetime.now().replace(microsecond=0)
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-    return len(ips)
+    return count
 
 def reload_endpoints():
     # Returns a set of the IPs from all downloaded network feeds

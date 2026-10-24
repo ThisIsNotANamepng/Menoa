@@ -172,8 +172,17 @@ def test_custom_feeds_used():
     assert any(f is None and "Custom feed custom skipped" in r for f, r in items), items
     assert str(Path.home() / "custom.hdb") not in ARGS_FILE.read_text()
 
+    assert clam_utils.list_feeds()["custom"]["last_refreshed"].year == 1970
     assert CliRunner().invoke(cli, ["clam", "reload", "custom"]).exit_code == 0
     assert (Path.home() / "custom.hdb").exists()
+    assert clam_utils.list_feeds()["custom"]["last_refreshed"].year > 1970
+
+    # Each reload replaces the whole file, so signatures removed upstream go away and nothing piles up
+    (served / "custom.hdb").write_text("0123456789abcdef0123456789abcdef:10:Menoa-Test-2\n")
+    os.utime(served / "custom.hdb", (time.time() + 60,) * 2)  # A later upload, this test server only sends Last-Modified (whole seconds)
+    assert CliRunner().invoke(cli, ["clam", "reload", "custom"]).exit_code == 0
+    assert (Path.home() / "custom.hdb").read_text() == "0123456789abcdef0123456789abcdef:10:Menoa-Test-2\n"
+    assert not list(Path.home().glob("custom.hdb.*"))  # No leftover temporary files
 
     list(clam_utils.scan_path_streaming(tempfile.gettempdir()))
     args = ARGS_FILE.read_text().splitlines()
