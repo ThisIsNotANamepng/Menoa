@@ -19,7 +19,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [x] **5. GUI progress hits 100% at about 53%**: progress is now files done / total, held at 99.9% until clamscan finishes; `get_scan_total` counts exactly what clamscan prints (symlinks, unreadable dirs; verified 26,791/26,791 on /usr/share/doc)
 - [x] **6. `delete_binary` binds `(path)`, not `(path,)`**: replaced by the rewrite
 - [x] **7. `get_package_version` only supports pacman**: now dpkg, rpm and pacman, batched (tested on Ubuntu, Debian, Fedora, Arch)
-- [ ] **8. Custom clam feeds are never used in scans**; `utils` import is commented out ([clam_utils.py:10](menoa/utils/clam_utils.py#L10), [174](menoa/utils/clam_utils.py#L174), [228](menoa/utils/clam_utils.py#L228))
+- [x] **8. Custom clam feeds are never used in scans**: custom feeds from the config are passed to clamscan in every scan type (missing ones are skipped with a warning instead of breaking the scan); `utils` import restored so `clam reload <custom>` works; `--local-path` stored absolute. Verified real clamscan detects a file via a custom .hdb feed
 - [x] **9. `menoa init` always overwrites `config.toml`**
 - [ ] **10. `cli.py` is a SyntaxError on Python 3.11**: nested same-quote f-strings ([cli.py:229](menoa/cli.py#L229), 231, 360, 362)
 - [ ] **11. GUI won't open without clamscan or a system DB**; it also shows the system DB version, not Menoa's ([clam_utils.py:96](menoa/utils/clam_utils.py#L96), [109](menoa/utils/clam_utils.py#L109))

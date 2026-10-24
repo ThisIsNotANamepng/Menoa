@@ -9,9 +9,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ["HOME"] = tempfile.mkdtemp()
 (Path.home() / ".menoa" / "feeds" / "clam" / "standard").mkdir(parents=True)
+(Path.home() / ".menoa" / "config.toml").write_text('[clam_feeds.default_main]\nlocal_path = "~/.menoa/feeds/clam/main.cvd"\n')
 
 FAKE_BIN = Path(tempfile.mkdtemp())
-(FAKE_BIN / "clamscan").write_text('#!/bin/sh\ncat "$FAKE_CLAM_OUT"\nexit "$FAKE_CLAM_EXIT"\n')
+ARGS_FILE = FAKE_BIN / "args"
+(FAKE_BIN / "clamscan").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {ARGS_FILE}\ncat "$FAKE_CLAM_OUT"\nexit "$FAKE_CLAM_EXIT"\n')
 (FAKE_BIN / "clamscan").chmod(stat.S_IRWXU)
 os.environ["PATH"] = f"{FAKE_BIN}:{os.environ['PATH']}"
 
@@ -131,7 +133,41 @@ def test_gui_progress():
         assert values == expected, values
 
 
+def test_custom_feeds_used():
+    import threading
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    from functools import partial
+
+    # A custom feed served over http, downloaded with `clam reload`, then passed to clamscan
+    served = Path(tempfile.mkdtemp())
+    (served / "custom.hdb").write_text("44d88612fea8a8f36de82e1278abb02f:68:Menoa-Test\n")
+    server = HTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(served)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    relative = os.path.relpath(Path.home() / "custom.hdb")
+    clam_utils.add_feed("custom", "Custom", f"http://127.0.0.1:{server.server_port}/custom.hdb", "test", relative, move_into_default_feed_path=False)
+    assert clam_utils.list_feeds()["custom"]["local_path"] == str(Path.home() / "custom.hdb")  # stored absolute
+
+    # Not downloaded yet: skipped with a warning instead of breaking the whole scan
+    fake(CLEAN, 0)
+    items = list(clam_utils.scan_path_streaming(tempfile.gettempdir()))
+    assert any(f is None and "Custom feed custom skipped" in r for f, r in items), items
+    assert str(Path.home() / "custom.hdb") not in ARGS_FILE.read_text()
+
+    assert CliRunner().invoke(cli, ["clam", "reload", "custom"]).exit_code == 0
+    assert (Path.home() / "custom.hdb").exists()
+
+    list(clam_utils.scan_path_streaming(tempfile.gettempdir()))
+    args = ARGS_FILE.read_text().splitlines()
+    assert args[args.index(str(Path.home() / "custom.hdb")) - 1] == "-d", args
+    assert not any("default_main" in a or a.endswith("main.cvd") for a in args)  # defaults still come from the scan type folders
+
+    clam_utils.remove_feed("custom")
+    server.shutdown()
+
+
 if __name__ == "__main__":
+    test_custom_feeds_used()
     test_good_scan_classification()
     test_failed_scans_raise()
     test_cli_exit_codes()

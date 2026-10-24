@@ -7,7 +7,7 @@ import tomli, tomli_w
 from pathlib import Path
 import requests
 
-#import utils.utils as utils
+import menoa.utils.utils as utils
 
 def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
@@ -94,6 +94,16 @@ def scan_path_streaming(path: str, scan_type="standard"):
         for feed in os.listdir(str(Path.home())+"/.menoa/feeds/clam/deep/"):
             cmd.append("-d")
             cmd.append(str(Path.home())+"/.menoa/feeds/clam/deep/"+feed)
+
+    # Custom feeds are used in every scan type. A missing one is skipped, passing it to clamscan would make it load nothing at all
+    for index, feed in list_feeds().items():
+        if index in DEFAULT_CLAM_FEEDS:
+            continue
+        feed_path = os.path.expanduser(feed["local_path"])
+        if os.path.exists(feed_path):
+            cmd += ["-d", feed_path]
+        else:
+            yield (None, f"Custom feed {index} skipped, {feed_path} doesn't exist (run `menoa clam reload {index}`)")
 
     cmd.append(path)
 
@@ -304,6 +314,9 @@ def add_feed(index, name, url, description, local_path, supports_versioning=Fals
         new_path = str(Path.home())+"/.menoa/feeds/clam/"+Path(local_path).name
         shutil.copy2(local_path, new_path)
         local_path = new_path
+
+    # Scans run from any directory, so a relative path would point somewhere else later
+    local_path = os.path.abspath(os.path.expanduser(local_path))
 
     config["clam_feeds"][index] = {
         "url": url,
