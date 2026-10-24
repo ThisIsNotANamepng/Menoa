@@ -38,6 +38,7 @@ from menoa.pages.progress_dialog import run_with_progress
 BIG_TIME = log(1.5, BIG_TIME)
 
 from menoa.utils.utils import get_enabled_tools
+from menoa.utils.clam_utils import database_freshness, get_last_time_scanned
 
 BIG_TIME = log(2, BIG_TIME)
 
@@ -76,8 +77,9 @@ class LearnMoreDialog(QDialog):
 
 class DashboardCard(QFrame):
     cardClicked = Signal()
-    def __init__(self, title, short_desc, long_desc, link):
+    def __init__(self, title, short_desc, long_desc, link, section):
         super().__init__()
+        self.section = section  # The tool's section in config.toml, None for tools without a background switch
         # store fields for the learn dialog
         self.link = link
         self.title = title
@@ -104,20 +106,11 @@ class DashboardCard(QFrame):
         title_label = QLabel(f"<b>{title}</b>")
         title_label.setObjectName("dashboard_label")
 
-        status = self.get_tool_status(title.lower())
-        status_text = "Enabled" if status else "Disabled"
-        status_color = "#4CAF50" if status else "#F44336"
-
-        # The attestation tool doesn't work in the background, it can't be enabled or disabled
-        if title == "Command Predictor (beta)":
-            status_text = ""
-
-        status_label = QLabel(status_text)
-        status_label.setStyleSheet(f"color: {status_color};")
-        status_label.setAlignment(Qt.AlignCenter)
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignCenter)
 
         title_layout.addWidget(title_label)
-        title_layout.addWidget(status_label)
+        title_layout.addWidget(self.status_label)
 
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
@@ -155,9 +148,12 @@ class DashboardCard(QFrame):
         main_layout.addWidget(self.header)
         main_layout.addWidget(content)
 
-    def get_tool_status(self, tool_name: str) -> bool:
-        ## TODO: This isn't great, the list of enabled tools is generated each time this is called, which is for each card
-        return tool_name in get_enabled_tools()
+    def set_status(self, enabled_tools):
+        if self.section is None:
+            return
+        enabled = self.section in enabled_tools
+        self.status_label.setText("Enabled" if enabled else "Disabled")
+        self.status_label.setStyleSheet(f"color: {'#4CAF50' if enabled else '#F44336'};")
 
     def mousePressEvent(self, event):
         """Handle mouse click events for the entire card"""
@@ -198,13 +194,9 @@ class DashboardPage(QWidget):
         stats_layout = QHBoxLayout(stats_bar)
         stats_layout.setContentsMargins(15, 12, 15, 12)
 
-        stats = [
-            ("Active Tools", str(len(get_enabled_tools())), "#00b57b"),
-            ("Statistic", "Low", "#4CAF50"),
-            ("Statistic", "79", "#00b57b")
-        ]
-
-        for label, value, color in stats:
+        # Values are filled in by refresh()
+        self.stat_values = {}
+        for label in ("Active Tools", "Signatures", "Last Scan"):
             stat = QWidget()
             stat_layout = QVBoxLayout(stat)
 
@@ -212,9 +204,9 @@ class DashboardPage(QWidget):
             lbl.setObjectName("dashboard_stats_label")
             lbl.setStyleSheet("color: #777777;")
 
-            val = QLabel(value)
+            val = QLabel()
             val.setObjectName("dashboard_stats_value")
-            val.setStyleSheet(f"color: {color};")
+            self.stat_values[label] = val
 
             stat_layout.addWidget(lbl)
             stat_layout.addWidget(val)
@@ -236,14 +228,6 @@ class DashboardPage(QWidget):
         grid_layout.setVerticalSpacing(20)
         grid_layout.setAlignment(Qt.AlignTop)
 
-        self.page_map = {
-            "Clam": 1,
-            "Network": 2,
-            "Process": 3,
-            "Attestation": 4,
-            "Command": 5
-        }
-
         # Tools grid setup
         scroll_area = QScrollArea()
 
@@ -253,50 +237,76 @@ class DashboardPage(QWidget):
                 "Malware scanner",
                 "A GUI front end for scanning files and directories for malware with ClamAV. Use it to scan files for malware.",
                 "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#clam",
+                1, "clamav",
             ),
             (
                 "Endpoint Scanner",
                 "Endpoint connection scanning",
                 "Compares active connections against known malicious endpoints.",
                 "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#network-scanner",
+                2, "network",
             ),
             (
                 "Process Scanner (beta)",
                 "Process classifier",
                 "Gathers information about current processes and classifies them as benign or malicious. Still in beta.",
                 "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#process",
+                3, "process",
             ),
             (
                 "Attestation (beta)",
                 "Binary attestation",
                 "Compares the hashes of local binaries in /bin against a list of correct hashes for Linux binaries.",
                 "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#attestation",
+                4, "attestation",
             ),
             (
                 "Command Predictor (beta)",
                 "Bash parser and predictor",
                 "Parses a given bash script and predicts in simple language what the outcome will be. Originally meant for install.sh scripts.",
                 "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#command",
+                5, None,  # Only runs on demand, there's nothing to enable
             ),
         ]
 
-        # Create cards
-        for i, (title, short_desc, long_desc, link) in enumerate(tools):
+        # Create cards, each (title, short description, long description, link, page index, config section)
+        self.cards = []
+        for i, (title, short_desc, long_desc, link, page, section) in enumerate(tools):
             row = i // 2
             col = i % 2
 
-            card = DashboardCard(title, short_desc, long_desc, link)
+            card = DashboardCard(title, short_desc, long_desc, link, section)
             # When card clicked go to page
-            if title in self.page_map:
-                card.cardClicked.connect(
-                    lambda idx=self.page_map[title]: self.pageRequested.emit(idx)
-                )
+            card.cardClicked.connect(lambda idx=page: self.pageRequested.emit(idx))
             grid_layout.addWidget(card, row, col)
+            self.cards.append(card)
 
         scroll_area.setWidget(grid_container)
         main_layout.addWidget(scroll_area, 1)
 
         self.setLayout(main_layout)
+        self.refresh()
+
+    def showEvent(self, event):
+        # Settings can change from the CLI or other pages while Menoa is open
+        self.refresh()
+        super().showEvent(event)
+
+    def refresh(self):
+        enabled_tools = get_enabled_tools()
+        for card in self.cards:
+            card.set_status(enabled_tools)
+
+        state, text = database_freshness()
+        values = {
+            "Active Tools": (str(len(enabled_tools)), "#00b57b"),
+            "Signatures": (text.removeprefix("Malware signatures are ") if state != "missing" else "Not downloaded",
+                           {"fresh": "#4CAF50", "outdated": "#FF9800"}.get(state, "#F44336")),
+            "Last Scan": (get_last_time_scanned(), "#00b57b"),
+        }
+        for label, (value, color) in values.items():
+            self.stat_values[label].setText(value)
+            self.stat_values[label].setStyleSheet(f"color: {color};")
 
 class MainWidget(QWidget):
     def __init__(self):

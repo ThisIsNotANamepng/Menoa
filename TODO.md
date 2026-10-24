@@ -27,7 +27,7 @@ Ordered by priority. Work top to bottom, one at a time.
 
 ## Medium
 
-- [ ] **13. Dashboard**: cards don't navigate (`page_map` keys vs titles); Attestation card always shows Disabled ([main.py:106](menoa/main.py#L106), [238-292](menoa/main.py#L238-L292))
+- [x] **13. Dashboard**: cards don't navigate (`page_map` keys vs titles); Attestation card always shows Disabled. Fixed, cards carry their page index and config section; statuses and stats refresh whenever the dashboard is shown; placeholder stats replaced with signature age and last scan
 - [ ] **14. `shell explain`**: crashes on a bare line ([cli.py:560-563](menoa/cli.py#L560-L563)); misses combined flags (`-rf`, `-xzf`), `sudo`, and pipes (`curl | bash`) ([script_utils.py](menoa/utils/script_utils.py))
 - [x] **15. `predict` crashes**: model is loaded after download; exited/unreadable processes are skipped
 - [ ] **16. Model download**: `joblib.load` of an unverified download (pin a sha256) ([process_utils.py](menoa/utils/process_utils.py)). Fixed: status check and atomic write. Your local `~/.menoa/process_scanner.pkl` is a saved 403 error page, delete it

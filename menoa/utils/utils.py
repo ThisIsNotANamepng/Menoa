@@ -264,10 +264,6 @@ def initialize_config(progress=None):
     if not os.path.exists(home_path + "/.menoa/process_scanner.pkl"):
         step("Downloading process scanning model", lambda: download_process_model(progress))
 
-    if not os.path.exists(home_path + "/.menoa/clam_last_scanned"):
-        with open(home_path + '/.menoa/clam_last_scanned', 'w') as f:
-            f.write("1970-01-01T00:00:00")
-
     # = Attestation
     import menoa.utils.attestation_utils as attestation_utils
     step("Checking attestation database", attestation_utils.create_table)
@@ -277,20 +273,13 @@ def initialize_config(progress=None):
 
 def get_enabled_tools():
     """
-    Returns a list of tools which are enabled
+    Returns the config sections of the tools which are enabled, like ["clamav", "network"]
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
-    enabled = []
-
-    if config["clamav"]["enabled"]: enabled.append("clamav scanner")
-    if config["network"]["enabled"]: enabled.append("endpoint scanner")
-    if config["process"]["enabled"]: enabled.append("process scanner (beta)")
-    if config["attestation"]["enabled"]: enabled.append("attestation")
-
-    return enabled
+    return [tool for tool in ("clamav", "network", "process", "attestation") if config[tool]["enabled"]]
 
 def rewrite():
     """

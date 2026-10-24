@@ -197,9 +197,11 @@ def get_last_time_scanned():
 
     try:
         with open(str(Path.home())+"/.menoa/clam_last_scanned", "r") as file:
-            return file.read()
+            last_scanned = file.read().strip()
     except FileNotFoundError:
         return "Never"
+    # Older versions of init wrote a placeholder instead of leaving the file missing
+    return "Never" if last_scanned in ("", "0", "1970-01-01T00:00:00") else last_scanned
 
 def set_last_time_scanned():
     # Updates the last time the system was scanned
