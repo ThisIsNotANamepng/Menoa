@@ -3,9 +3,14 @@ Checks that process scan results land on the right PIDs and that live features m
 Run with `python tests/test_process_scan.py` (or pytest). Uses a stub model, so no real model is needed
 """
 
-import os, subprocess, sys, time
+import contextlib, io, json, os, subprocess, sys, tempfile, threading, time
+from functools import partial
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from unittest import mock
 from pathlib import Path
 
+import joblib
+import tomli
 import numpy as np
 import psutil
 
@@ -24,11 +29,12 @@ class FlagsNiceProcesses:
 
 
 def test_results_line_up_with_pids():
-    process_utils.load_model = lambda: {"model": FlagsNiceProcesses(), "metadata": {"feature_columns": FEATURES, "version": "test"}}
+    stub = {"model": FlagsNiceProcesses(), "metadata": {"feature_columns": FEATURES, "version": "test"}}
     niced = subprocess.Popen(["nice", "-n", "19", "sleep", "30"])
     normal = subprocess.Popen(["sleep", "30"])
     try:
-        pids, predictions, confidences = process_utils.predict(0.5)
+        with mock.patch.object(process_utils, "load_model", lambda: stub):
+            pids, predictions, confidences = process_utils.predict(0.5)
         assert len(pids) == len(predictions) == len(confidences) > 10
         assert all(isinstance(p, int) for p in pids)
 
@@ -59,7 +65,246 @@ def test_features_use_training_vocabulary():
         child.kill()
 
 
+class Planted:
+    # Loading this pickle creates `marker`, the way a malicious model would run its code
+    def __init__(self, marker):
+        self.marker = marker
+
+    def __reduce__(self):
+        return (open, (self.marker, "w"))
+
+
+@contextlib.contextmanager
+def model_home(**process_settings):
+    """A temporary HOME with these [process] settings and MODEL_PATH inside it, never the real ~/.menoa"""
+    home = Path(tempfile.mkdtemp())
+    (home / ".menoa").mkdir()
+    # JSON strings and booleans are valid TOML
+    (home / ".menoa" / "config.toml").write_text("[process]\n" + "".join(f"{k} = {json.dumps(v)}\n" for k, v in process_settings.items()))
+    model = home / ".menoa" / "process_scanner.pkl"
+    with mock.patch.dict(os.environ, {"HOME": str(home)}), mock.patch.object(process_utils, "MODEL_PATH", str(model)):
+        yield model
+
+
+OWN_URL = "https://example.org/model.pkl"  # Any model_url but Menoa's
+
+
+def new_key():
+    path = Path(tempfile.mkdtemp()) / "model.key"
+    return path, process_utils.generate_signing_key(str(path))
+
+
+def assert_refused(expected, marker):
+    try:
+        process_utils.load_model()
+        assert False, f"should have refused: {expected}"
+    except Exception as e:
+        assert expected in str(e), e
+    assert not marker.exists(), "the untrusted model was run"
+
+
+def test_signed_models_load():
+    key, public = new_key()
+    assert key.stat().st_mode & 0o777 == 0o600
+    with model_home(model_public_key=public, model_url=OWN_URL) as model:
+        joblib.dump({"model": "stub", "metadata": {"version": "1.2.0"}}, model)
+        assert process_utils.sign_model(str(model), str(key)) == "1.2.0"  # Version read from the model
+        assert process_utils.load_model()["model"] == "stub"
+
+
+def test_untrusted_models_never_run():
+    key, public = new_key()
+    other_key, _ = new_key()
+    marker = Path(tempfile.mkdtemp()) / "ran"
+
+    with model_home(model_public_key=public, model_url=OWN_URL) as model:
+        signature = Path(str(model) + ".sig")
+        joblib.dump(Planted(str(marker)), model)
+        assert_refused("has no signature file", marker)
+
+        process_utils.sign_model(str(model), str(other_key), "1.0")
+        assert_refused("isn't signed by model_public_key", marker)
+
+        # A trusted model replaced on disk after it was signed
+        joblib.dump({"model": "stub", "metadata": {"version": "1.0"}}, model)
+        process_utils.sign_model(str(model), str(key))
+        joblib.dump(Planted(str(marker)), model)
+        assert_refused("isn't signed by model_public_key", marker)
+
+        signature.write_text("not json")
+        assert_refused("isn't signed by model_public_key", marker)
+
+    with model_home() as model:  # No key set: only the built-in model
+        joblib.dump(Planted(str(marker)), model)
+        assert_refused("isn't Menoa's built-in model", marker)
+
+
+def test_own_models_load_unsigned():
+    # A model_url the user chose, without a model_public_key, isn't checked
+    own = Path(tempfile.mkdtemp()) / "own.pkl"
+    joblib.dump({"model": "own", "metadata": {"version": "dev"}}, own)
+    with model_home(model_url=str(own)) as model:
+        assert process_utils.load_model()["model"] == "own"  # Copied from the local path
+        assert model.exists()
+
+
+def test_model_download():
+    key, public = new_key()
+    marker = Path(tempfile.mkdtemp()) / "ran"
+    served = Path(tempfile.mkdtemp())
+    joblib.dump({"model": "stub", "metadata": {"version": "2.0"}}, served / "model.pkl")
+    process_utils.sign_model(str(served / "model.pkl"), str(key))
+    server = HTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(served)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    settings = {"model_public_key": public, "model_url": f"http://127.0.0.1:{server.server_port}/model.pkl"}
+
+    try:
+        with model_home(**settings) as model:
+            assert process_utils.load_model()["model"] == "stub"  # Downloaded with its signature
+            assert sorted(os.listdir(model.parent)) == ["config.toml", "process_scanner.pkl", "process_scanner.pkl.sig"]
+
+        # A compromised server swaps the model, the download is deleted without being loaded
+        joblib.dump(Planted(str(marker)), served / "model.pkl")
+        with model_home(**settings) as model:
+            assert_refused("isn't signed by model_public_key", marker)
+            assert os.listdir(model.parent) == ["config.toml"]
+
+        (served / "model.pkl.sig").unlink()
+        with model_home(**settings) as model:
+            assert_refused("404", marker)
+            assert os.listdir(model.parent) == ["config.toml"]
+    finally:
+        server.shutdown()
+
+
+def test_cli_keygen_and_sign():
+    from click.testing import CliRunner
+    from menoa.cli import cli
+
+    folder = Path(tempfile.mkdtemp())
+    key = folder / "menoa-model.key"
+    result = CliRunner().invoke(cli, ["process", "keygen", str(key)])
+    assert result.exit_code == 0, result.output
+    public = result.output.split('model_public_key = "')[1].split('"')[0]
+
+    original = key.read_text()
+    result = CliRunner().invoke(cli, ["process", "keygen", str(key)])
+    assert result.exit_code == 1 and key.read_text() == original, result.output  # Never overwritten
+
+    joblib.dump({"model": "stub", "metadata": {"version": "3.1"}}, folder / "model.pkl")
+    result = CliRunner().invoke(cli, ["process", "sign", str(folder / "model.pkl"), "--key", str(key)])
+    assert result.exit_code == 0 and "version 3.1" in result.output, result.output
+    settings = {"model_public_key": public, "model_url": "https://example.org/model.pkl"}
+    assert process_utils.verify_model(str(folder / "model.pkl"), str(folder / "model.pkl.sig"), settings) == "3.1"
+
+
+def test_cli_model():
+    from click.testing import CliRunner
+    from menoa.cli import cli
+    import hashlib
+
+    folder = Path(tempfile.mkdtemp())
+    joblib.dump({"model": "own", "metadata": {"version": "dev"}}, folder / "own.pkl")
+    joblib.dump({"model": "unsigned", "metadata": {"version": "dev"}}, folder / "unsigned.pkl")
+    joblib.dump({"model": "menoa", "metadata": {"version": "0.2.0"}}, folder / "menoa.pkl")
+    _, public = new_key()
+    config = lambda: tomli.loads((Path(os.environ["HOME"]) / ".menoa" / "config.toml").read_text())["process"]
+
+    with model_home(threshold=0.7) as model:
+        cwd = os.getcwd()
+        os.chdir(folder)
+        try:
+            result = CliRunner().invoke(cli, ["process", "model", "own.pkl"])  # Relative paths are stored absolute
+        finally:
+            os.chdir(cwd)
+        assert result.exit_code == 0, result.output
+        assert config()["model_url"] == str(folder / "own.pkl") and config()["threshold"] == 0.7
+        assert process_utils.load_model()["model"] == "own"
+        assert "not signature checked" in CliRunner().invoke(cli, ["process", "model"]).output
+
+        # A key that the model isn't signed with: nothing changes
+        result = CliRunner().invoke(cli, ["process", "model", str(folder / "unsigned.pkl"), "--public-key", public])
+        assert result.exit_code == 1 and "Model not changed" in result.output, result.output
+        assert config()["model_url"] == str(folder / "own.pkl") and process_utils.load_model()["model"] == "own"
+
+        # Back to Menoa's model, which has to be the built-in one again
+        menoa_sha256 = hashlib.sha256((folder / "menoa.pkl").read_bytes()).hexdigest()
+        with mock.patch.multiple(process_utils, DEFAULT_MODEL_URL=str(folder / "menoa.pkl"), BUILTIN_MODEL_SHA256=menoa_sha256):
+            result = CliRunner().invoke(cli, ["process", "model", "--default"])
+            assert result.exit_code == 0, result.output
+            assert process_utils.load_model()["model"] == "menoa"
+            assert "built-in" in CliRunner().invoke(cli, ["process", "model"]).output
+
+
+def test_menoa_model_ignores_the_config_key():
+    # Someone who can edit config.toml sets their own key, Menoa's model is still only checked against Menoa's key from the code
+    menoa_key, menoa_public = new_key()
+    attacker_key, attacker_public = new_key()
+    marker = Path(tempfile.mkdtemp()) / "ran"
+
+    with model_home(model_public_key=attacker_public) as model:
+        joblib.dump(Planted(str(marker)), model)
+        process_utils.sign_model(str(model), str(attacker_key), "9.9")
+        assert_refused("isn't Menoa's built-in model", marker)  # Before Menoa's key exists
+
+        with mock.patch.object(process_utils, "MENOA_MODEL_PUBLIC_KEY", menoa_public):
+            assert_refused("isn't signed by Menoa", marker)
+
+            joblib.dump({"model": "menoa", "metadata": {"version": "0.3.0"}}, model)
+            process_utils.sign_model(str(model), str(menoa_key))
+            assert process_utils.load_model()["model"] == "menoa"
+
+
+def test_unsigned_model_warning():
+    from click.testing import CliRunner
+    from menoa.cli import cli
+
+    _, public = new_key()
+    warning = "your own unsigned process model (/models/own.pkl)"
+    with mock.patch.object(process_utils, "predict", lambda threshold: ([], [], [])):
+        with model_home(model_url="/models/own.pkl"):
+            result = CliRunner().invoke(cli, ["process", "scan", "--threshold", "0.5"])
+            assert result.exit_code == 0 and warning in result.stderr and warning not in result.stdout, result.output
+            for quiet in ("--quiet", "-q"):
+                result = CliRunner().invoke(cli, ["process", "scan", "--threshold", "0.5", quiet])
+                assert result.exit_code == 0 and "unsigned" not in result.output, result.output
+
+        # Checked models aren't pointed out
+        for settings in ({"model_url": "/models/own.pkl", "model_public_key": public}, {}):
+            with model_home(**settings):
+                assert "unsigned" not in CliRunner().invoke(cli, ["process", "scan", "--threshold", "0.5"]).output
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages import process_page
+    app = QApplication.instance() or QApplication([])
+    with mock.patch.object(process_page, "get_model_version", lambda: "test"):
+        with model_home(model_url="/models/own.pkl", threshold=0.5):
+            page = process_page.ProcessPage(process_page.PredictionEngine())
+            assert page.model_warning.text() == "Using your own unsigned model: /models/own.pkl" and not page.model_warning.isHidden()
+        with model_home(threshold=0.5):
+            page = process_page.ProcessPage(process_page.PredictionEngine())
+            assert page.model_warning.text() == "" and page.model_warning.isHidden()
+
+
+def test_pinned_hash_is_the_trained_model():
+    # The model LinuxProcessesScanning produces, when it's checked out next to Menoa
+    trained = Path(__file__).resolve().parent.parent.parent / "LinuxProcessesScanning" / "ProcessAnalyses.pkl"
+    if trained.exists():
+        import hashlib
+        assert hashlib.sha256(trained.read_bytes()).hexdigest() == process_utils.BUILTIN_MODEL_SHA256
+
+
 if __name__ == "__main__":
     test_results_line_up_with_pids()
     test_features_use_training_vocabulary()
+    test_signed_models_load()
+    test_untrusted_models_never_run()
+    test_own_models_load_unsigned()
+    test_model_download()
+    test_cli_keygen_and_sign()
+    test_cli_model()
+    test_menoa_model_ignores_the_config_key()
+    test_unsigned_model_warning()
+    test_pinned_hash_is_the_trained_model()
     print("All process scan checks passed")

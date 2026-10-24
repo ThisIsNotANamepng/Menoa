@@ -43,6 +43,24 @@ menoa network reload
 
 To write your own server, serve a `plain` file.
 
+## Process Models
+
+Menoa's own model is always checked against Menoa's key before it's loaded, since loading a model runs code from it. To use your own model:
+
+```
+menoa process model ./my_model.pkl     # A local path or a URL, loaded unsigned since you chose it (scans point this out, -q hides it)
+menoa process model --default          # Back to Menoa's model
+```
+
+To publish a model for other people, sign it so they only load your exact file:
+
+```
+menoa process keygen ~/menoa-model.key        # Prints your public key, keep the private key offline
+menoa process sign model.pkl --key ~/menoa-model.key
+```
+
+Serve `model.pkl` and `model.pkl.sig` side by side. Users run `menoa process model https://example.org/model.pkl --public-key <key>`, or set `model_url` and `model_public_key` in the `[process]` section of `~/.menoa/config.toml`.
+
 ## Software Principles
 
 Menoa is made specifically for Linux, and it follows the very important principles of the OS that users demand

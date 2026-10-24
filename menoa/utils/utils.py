@@ -185,6 +185,8 @@ def initialize_config(progress=None):
     feed_update_delay = 86400 # 1 day
     enabled = true
     threshold = 0.7
+    model_url = "https://menoa-feeds.us-ord-1.linodeobjects.com/process%2Fprocess_analyses.pkl" # A URL or local path, `menoa process model` changes it
+    model_public_key = "" # Your own model_url must be signed with this key (`menoa process sign`), its signature is at model_url + ".sig". Empty: not checked. Menoa's model is always checked against Menoa's key
 
     [attestation]
     scan_delay = 600 # 10 minutes

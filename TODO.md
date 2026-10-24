@@ -30,7 +30,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [x] **13. Dashboard**: cards don't navigate (`page_map` keys vs titles); Attestation card always shows Disabled. Fixed, cards carry their page index and config section; statuses and stats refresh whenever the dashboard is shown; placeholder stats replaced with signature age and last scan
 - [ ] **14. `shell explain`**: crashes on a bare line ([cli.py:560-563](menoa/cli.py#L560-L563)); misses combined flags (`-rf`, `-xzf`), `sudo`, and pipes (`curl | bash`) ([script_utils.py](menoa/utils/script_utils.py))
 - [x] **15. `predict` crashes**: model is loaded after download; exited/unreadable processes are skipped
-- [ ] **16. Model download**: `joblib.load` of an unverified download (pin a sha256) ([process_utils.py](menoa/utils/process_utils.py)). Fixed: status check and atomic write. Your local `~/.menoa/process_scanner.pkl` is a saved 403 error page, delete it
+- [x] **16. Model download**: `joblib.load` of an unverified download. Fixed, downloads must match `MODEL_SHA256` (pinned in [process_utils.py](menoa/utils/process_utils.py)) or they're deleted unused. Now signed models: Menoa's `model_url` is always checked against Menoa's key/hash in the code, whatever the config says; a user's own `model_url` is checked if `[process] model_public_key` is set, else loads unsigned with a warning (`process scan -q` hides it). `menoa process model` / `keygen` / `sign`
 - [x] **17. `menoa process scan` ignores the configured threshold**: defaults to the config value now
 - [ ] **18. Hard-coded `/home/jack` icon paths**; `.desktop` uses unexpanded `~` ([utils.py:25](menoa/utils/utils.py#L25), [main.py:304](menoa/main.py#L304), [352](menoa/main.py#L352))
 - [ ] **19. Versioned feeds**: network feeds fixed (versioning removed, pluggable formats). Clam still uses `progress_patch_download`: `current_version` never saved, patches re-append forever, `add_feed` omits `current_version` ([utils.py:75-107](menoa/utils/utils.py#L75-L107))
@@ -51,6 +51,10 @@ Ordered by priority. Work top to bottom, one at a time.
 - [ ] `build/lib/` is tracked in git despite `.gitignore`
 - [ ] `setup.py`: `==` pins in `install_requires`; placeholder `author_email`/`url`
 
+## User Submitted
+- [ ] Using the clamav library instead of watching a subprocess
+- [ ] Fixing up the gui to make it look better and also make the top bar of the window match the theme
+
 ## To discuss
 
 - [ ] **Deploying intel updates to clients.** Decide the default network feed source and how updates reach clients. Proposed: edit intel in a private MISP → VPS cron exports `restSearch` to a static `main.txt` → clients refresh on a schedule. Full-snapshot refresh already handles additions and deletions. Open pieces:
@@ -61,6 +65,7 @@ Ordered by priority. Work top to bottom, one at a time.
 - [ ] **Attestation server.** Client side is done ([attestation_utils.py](menoa/utils/attestation_utils.py) docstring has the API). Open pieces:
   - Build the server: look up the expected sha256 for (distro, arch, package, version, path) and sign `signed_message()` with the Menoa private key
   - Generate the Ed25519 key pair, keep the private key on the server only, put the public key and server URL in the default config
+  - Use a separate, offline key for process models (`menoa process keygen`), not the attestation key: the attestation key has to live on an internet-facing server, and a leaked model key means code execution on every install. Once it exists: sign `ProcessAnalyses.pkl`, upload the `.sig` next to it, put the public key in `MENOA_MODEL_PUBLIC_KEY` ([process_utils.py](menoa/utils/process_utils.py), in the code so config.toml can't change it), delete `BUILTIN_MODEL_SHA256`
   - Limits: root malware can also edit Menoa's code or the configured public key; repointing a symlink in /bin to an unowned file shows as a new "Not checkable" binary, not an alert; package manager versions are trusted as reported
 - [ ] **Process model training data.** CombinedSets.csv (TON_IoT) labels rows by *attack time window*, not by malicious process: `atop` itself is labelled malicious 20,862 times, and 189 of 328 process names appear under both labels. Status/POLI value `0` looks like a second export format and correlates with label 1. The model can't learn "this process is malware" from these labels; needs a dataset labelled per process (the readme's own-dataset idea). Also: random row split leaks the same processes/time windows into the test set, so reported metrics are optimistic; `algorithms/*.py` legacy scripts still use the old `LabelEncoder` approach and write `ProcessAnalyses.pkl` in the current directory
 - [ ] **Keeping ClamAV signatures up to date.** Age warnings are done (ClamAV page, `menoa clam scan` warning with `--quiet`, `menoa clam status` exit codes), but nothing updates on its own, so they just tell the user. Open pieces:

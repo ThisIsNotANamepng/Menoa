@@ -447,12 +447,18 @@ def process():
 
 @process.command(name="scan")
 @click.option('--threshold', type=float, required=False, help="Defaults to the threshold in the config")
-def process_scan(threshold=None):
+@click.option('--quiet', '-q', is_flag=True, help="Don't warn about using your own unsigned model")
+def process_scan(threshold=None, quiet=False):
     """
     Scans running processes with given threshold
     """
 
     import menoa.utils.process_utils as process_utils
+
+    # Someone who can edit config.toml could swap in their own model, so a model that isn't checked is always pointed out
+    settings = process_utils.get_model_settings()
+    if not quiet and process_utils.is_unsigned_model(settings):
+        err_console.print(f"[yellow]Warning: using your own unsigned process model ({settings['model_url']}), make sure it's the one you added (--quiet hides this)[/yellow]")
 
     if threshold is None:
         threshold = process_utils.get_process_threshold()
@@ -526,6 +532,79 @@ def process_toggle_background_on(on, off):
         console.print("[green]Background scan toggled off[/green]")
     else:
         console.print(f"[green]Background scan toggled {process_utils.toggle()}[/green]")
+
+@process.command(name="model")
+@click.argument('source', required=False)
+@click.option('--public-key', default="", help="Only load the model if it's signed with this key (its signature is SOURCE.sig)")
+@click.option('--default', 'use_default', is_flag=True, help="Go back to Menoa's model")
+def process_model(source, public_key, use_default):
+    """
+    Uses the process model at SOURCE (a URL or a local path). Without --public-key your own model isn't checked,
+    only use models you trust: loading one runs code from it. With no SOURCE, shows the current model
+    """
+    import menoa.utils.process_utils as process_utils
+
+    if not source and not use_default:
+        settings = process_utils.get_model_settings()
+        print(f"Model: {settings['model_url']}")
+        try:
+            version = process_utils.verify_model(process_utils.MODEL_PATH, process_utils.MODEL_PATH + ".sig", settings)
+        except FileNotFoundError:
+            console.print("[yellow]Not downloaded yet[/yellow]")
+            return
+        except Exception as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        if version is None:
+            console.print("[yellow]Your own model, not signature checked[/yellow]")
+        elif version == "built-in":
+            console.print("[green]Menoa's built-in model[/green]")
+        elif process_utils.is_official_model(settings):
+            console.print(f"[green]Menoa's model, signed by Menoa, version {version}[/green]")
+        else:
+            console.print(f"[green]Signed with model_public_key, version {version}[/green]")
+        return
+
+    try:
+        if use_default:
+            process_utils.set_model()
+        else:
+            process_utils.set_model(source, public_key)
+    except Exception as e:
+        console.print(f"[red]Model not changed: {e}[/red]")
+        sys.exit(1)
+    console.print("[green]Process model updated[/green]")
+
+@process.command(name="keygen")
+@click.argument('private_key', type=click.Path(dir_okay=False))
+def process_keygen(private_key):
+    """
+    Creates a key for signing process models. Keep PRIVATE_KEY offline, anyone with it can sign models that run on your users' machines
+    """
+    import menoa.utils.process_utils as process_utils
+
+    try:
+        public_key = process_utils.generate_signing_key(private_key)
+    except FileExistsError:
+        console.print(f"[red]{private_key} already exists, models signed with it would stop loading if it were replaced[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]Private key written to {private_key}[/green]")
+    print("Put this in the [process] section of ~/.menoa/config.toml (or your users' default config):")
+    print(f'model_public_key = "{public_key}"')
+
+@process.command(name="sign")
+@click.argument('model', type=click.Path(exists=True, dir_okay=False))
+@click.option('--key', 'private_key', required=True, type=click.Path(exists=True, dir_okay=False), help="Private key from `menoa process keygen`")
+@click.option('--model-version', type=str, help="Defaults to the version inside the model")
+def process_sign(model, private_key, model_version):
+    """
+    Signs a process model, writing MODEL.sig to publish next to it
+    """
+    import menoa.utils.process_utils as process_utils
+
+    version = process_utils.sign_model(model, private_key, model_version)
+    console.print(f"[green]Signed {model} (version {version}), publish {model}.sig next to it[/green]")
 
 """
 # --------------------

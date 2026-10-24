@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDouble
 from PySide6.QtCore import QTimer, QObject, QDateTime
 from PySide6.QtGui import QFont, QFontDatabase, QColor
 
-from menoa.utils.process_utils import predict, get_process_threshold, set_process_threshold, get_model_version
+from menoa.utils.process_utils import predict, get_process_threshold, set_process_threshold, get_model_version, get_model_settings, is_unsigned_model
 
 class PredictionEngine(QObject):
     def __init__(self):
@@ -46,6 +46,18 @@ class ProcessPage(QWidget):
         self.version_label = QLabel(f"Model version: {model_version}")
         top_layout.addWidget(self.version_label)
 
+        # Someone who can edit config.toml could swap in their own model, so a model that isn't checked is always pointed out
+        self.model_warning = QLabel()
+        self.model_warning.setStyleSheet("color: #FF9800;")
+        self.model_warning.setWordWrap(True)
+        try:
+            settings = get_model_settings()
+            if is_unsigned_model(settings):
+                self.model_warning.setText(f"Using your own unsigned model: {settings['model_url']}")
+        except Exception:
+            pass
+        self.model_warning.setVisible(bool(self.model_warning.text()))
+
         # Threshold input
         ## Need to incorporate this into scans and probably save it in a config somewhere so it can be used in background scans too
         self.threshold_label = QLabel("Threshold:")
@@ -63,6 +75,7 @@ class ProcessPage(QWidget):
         top_layout.addWidget(self.scan_button)
 
         self.layout.addLayout(top_layout)
+        self.layout.addWidget(self.model_warning)
 
         # Table for process log
         self.table = QTableWidget()
