@@ -12,10 +12,7 @@ Ordered by priority. Work top to bottom, one at a time.
   - [x] GUI runs setup with a progress dialog on first launch; README install steps mention `menoa init`; cvdupdate now runs in-process (works for pipx/desktop launches) and once instead of three times
 - [x] **2. Failed scan reports "No malware found!"**: scans with no signatures loaded, a crash, or a missing path now fail loudly (CLI exit 2, GUI "Scan failed"). Also fixed: symlinks, empty files and unreadable files were reported as malware; CLI exits 0/1/2 like clamscan
 - [x] **3. Attestation logic is inverted**: rewritten around signed expected hashes (Ed25519). Local DB keeps one signed record per binary, rechecks are local, tampering with the DB shows "Record tampered!", tampered binaries raise a desktop alert
-- [ ] **4. Process scanner puts results on the wrong PID**
-  - [ ] `pids = ["padding"]` off-by-one, plus processes skipped after `pids.append` ([process_utils.py:142-151](menoa/utils/process_utils.py#L142-L151))
-  - [ ] `LabelEncoder` re-fit on live data each scan ([line 195](menoa/utils/process_utils.py#L195))
-  - [ ] First `cpu_percent` reading is always 0.0
+- [x] **4. Process scanner puts results on the wrong PID**: PIDs and results now line up; Menoa loads the `baseline_model.py` artifact (pipeline with its own encoders) instead of re-fitting `LabelEncoder`; live features match atop's vocabulary (POLI `norm`, Status `-`/`N`, State `I`→`S`, 15-char CMD); CPU is sampled over 1s. Same fixes in LinuxProcessesScanning's `testSystem.py`
 
 ## High
 
@@ -32,9 +29,9 @@ Ordered by priority. Work top to bottom, one at a time.
 
 - [ ] **13. Dashboard**: cards don't navigate (`page_map` keys vs titles); Attestation card always shows Disabled ([main.py:106](menoa/main.py#L106), [238-292](menoa/main.py#L238-L292))
 - [ ] **14. `shell explain`**: crashes on a bare line ([cli.py:560-563](menoa/cli.py#L560-L563)); misses combined flags (`-rf`, `-xzf`), `sudo`, and pipes (`curl | bash`) ([script_utils.py](menoa/utils/script_utils.py))
-- [ ] **15. `predict` crashes**: model downloaded but never loaded; `ProcessLookupError` not caught ([process_utils.py:133-154](menoa/utils/process_utils.py#L133-L154))
+- [x] **15. `predict` crashes**: model is loaded after download; exited/unreadable processes are skipped
 - [ ] **16. Model download**: `joblib.load` of an unverified download (pin a sha256) ([process_utils.py](menoa/utils/process_utils.py)). Fixed: status check and atomic write. Your local `~/.menoa/process_scanner.pkl` is a saved 403 error page, delete it
-- [ ] **17. `menoa process scan` ignores the configured threshold** (0.75 vs config 0.7 vs GUI 0.6) ([cli.py:405](menoa/cli.py#L405))
+- [x] **17. `menoa process scan` ignores the configured threshold**: defaults to the config value now
 - [ ] **18. Hard-coded `/home/jack` icon paths**; `.desktop` uses unexpanded `~` ([utils.py:25](menoa/utils/utils.py#L25), [main.py:304](menoa/main.py#L304), [352](menoa/main.py#L352))
 - [ ] **19. Versioned feeds**: network feeds fixed (versioning removed, pluggable formats). Clam still uses `progress_patch_download`: `current_version` never saved, patches re-append forever, `add_feed` omits `current_version` ([utils.py:75-107](menoa/utils/utils.py#L75-L107))
 - [ ] **20. Network page**: fake interface summary ([network_utils.py](menoa/utils/network_utils.py)). Fixed: set lookup, normalized cache files, consistent threat counts
@@ -65,3 +62,4 @@ Ordered by priority. Work top to bottom, one at a time.
   - Build the server: look up the expected sha256 for (distro, arch, package, version, path) and sign `signed_message()` with the Menoa private key
   - Generate the Ed25519 key pair, keep the private key on the server only, put the public key and server URL in the default config
   - Limits: root malware can also edit Menoa's code or the configured public key; repointing a symlink in /bin to an unowned file shows as a new "Not checkable" binary, not an alert; package manager versions are trusted as reported
+- [ ] **Process model training data.** CombinedSets.csv (TON_IoT) labels rows by *attack time window*, not by malicious process: `atop` itself is labelled malicious 20,862 times, and 189 of 328 process names appear under both labels. Status/POLI value `0` looks like a second export format and correlates with label 1. The model can't learn "this process is malware" from these labels; needs a dataset labelled per process (the readme's own-dataset idea). Also: random row split leaks the same processes/time windows into the test set, so reported metrics are optimistic; `algorithms/*.py` legacy scripts still use the old `LabelEncoder` approach and write `ProcessAnalyses.pkl` in the current directory

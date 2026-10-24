@@ -1,6 +1,4 @@
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score
 import joblib
 import psutil
 import os
@@ -8,14 +6,27 @@ import time
 from pathlib import Path
 import tomli, tomli_w
 
+MODEL_PATH = str(Path.home())+"/.menoa/process_scanner.pkl"
+
+def load_model():
+    """
+    Returns the model artifact made by LinuxProcessesScanning's baseline_model.py: {"model": sklearn Pipeline, "metadata": {...}}
+    The pipeline holds its own encoders, so it takes the raw feature values. Downloads the model if it's missing or unreadable
+    """
+    try:
+        artifact = joblib.load(MODEL_PATH)
+    except Exception:
+        download_process_model()
+        artifact = joblib.load(MODEL_PATH)
+
+    if not isinstance(artifact, dict) or "model" not in artifact or "metadata" not in artifact:
+        raise Exception(f"{MODEL_PATH} is an old model format, delete it so the current model is downloaded")
+
+    return artifact
+
 def get_model_version():
     # Loads the model and gets the embedded model version
-
-    try:
-        return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
-    except:
-        download_process_model()
-        return joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl").version
+    return load_model()["metadata"]["version"]
 
 def download_process_model(progress=None):
     # Downloads the latest process model from the menoa servers
@@ -24,7 +35,7 @@ def download_process_model(progress=None):
     from menoa.utils.utils import progress_download
 
     url = "https://menoa-feeds.us-ord-1.linodeobjects.com/process%2Fprocess_analyses.pkl"
-    progress_download(url, str(Path.home())+"/.menoa/process_scanner.pkl", progress)
+    progress_download(url, MODEL_PATH, progress)
 
 def get_process_threshold():
     """
@@ -48,192 +59,99 @@ def set_process_threshold(threshold):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def get_tslpi(pid):
-    tslpi = 0
-    task_dir = f'/proc/{pid}/task'
+ATOP_INTERVAL = 10  # The training data is atop output, whose Status "N" means the process started during its 10s default interval
 
-    try:
-        for tid in os.listdir(task_dir):
-            status_file = os.path.join(task_dir, tid, 'status')
-            with open(status_file, 'r') as f:
-                for line in f:
-                    if line.startswith('State:'):
-                        state = line.split()[1]  # e.g., 'S' for interruptible sleep
-                        if state == 'S':
-                            tslpi += 1
-                        break
-    except Exception as e:
-        print(f"Error accessing task info: {e}")
-        return None
+# Scheduling policy names as atop prints them
+POLICY_NAMES = {os.SCHED_OTHER: "norm", os.SCHED_BATCH: "btch", os.SCHED_IDLE: "idle", os.SCHED_FIFO: "fifo", os.SCHED_RR: "rr"}
 
-    return tslpi
+def read_stat(path):
+    # Fields of a /proc/.../stat file after the command name, which can contain spaces: [state, ppid, ..., priority (15), nice (16), ...]
+    with open(path, "r") as f:
+        return f.read().rsplit(")", 1)[1].split()
 
-def get_tslpu(pid):
-    tslpu = 0
-    task_dir = f'/proc/{pid}/task'
+def atop_state(state):
+    # Kernels since 4.14 report idle kernel threads as "I", atop (and the training data) counted them as sleeping
+    return "S" if state == "I" else state
 
-    try:
-        for tid in os.listdir(task_dir):
-            status_file = os.path.join(task_dir, tid, 'status')
-            with open(status_file, 'r') as f:
-                for line in f:
-                    if line.startswith('State:'):
-                        state = line.split()[1]  # e.g., 'D' for uninterruptible sleep
-                        if state == 'D':
-                            tslpu += 1
-                        break
-    except Exception as e:
-        print(f"Error accessing task info: {e}")
-        return None
+def process_features(proc, now):
+    """
+    Reads one process's features the way atop recorded them in the training data
+    """
+    pid = proc.pid
+    stat = read_stat(f"/proc/{pid}/stat")
 
-    return tslpu
+    threads = {"R": 0, "S": 0, "D": 0}
+    for tid in os.listdir(f"/proc/{pid}/task"):
+        try:
+            state = atop_state(read_stat(f"/proc/{pid}/task/{tid}/stat")[0])
+        except FileNotFoundError:
+            continue  # Thread exited while being read
+        if state in threads:
+            threads[state] += 1
 
-def get_process_state(pid):
-    try:
-        with open(f'/proc/{pid}/status', 'r') as f:
-            for line in f:
-                if line.startswith('State:'):
-                    state_code = line.split()[1]  # e.g., 'S', 'R', 'D', etc.
-                    return state_code.lower()  # return as 's', 'r', etc. to match your dataset
-    except FileNotFoundError:
-        return 'e'  # Process exited
-    except Exception as e:
-        print(f"Error reading status for PID {pid}: {e}")
-        return '?'
+    with open(f"/proc/{pid}/comm", "r") as f:
+        cmd = f.read().strip()  # atop shows the kernel's 15 character command name
 
-def get_trun(pid):
-    trun = 0
-    task_dir = f'/proc/{pid}/task'
-
-    try:
-        for tid in os.listdir(task_dir):
-            status_file = os.path.join(task_dir, tid, 'status')
-            with open(status_file, 'r') as f:
-                for line in f:
-                    if line.startswith('State:'):
-                        state = line.split()[1]  # 'R', 'S', etc.
-                        if state == 'R':
-                            trun += 1
-                        break
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-
-    return trun
+    return {
+        'TRUN': threads["R"],
+        'TSLPI': threads["S"],
+        'TSLPU': threads["D"],
+        'POLI': POLICY_NAMES.get(os.sched_getscheduler(pid) & ~os.SCHED_RESET_ON_FORK, "unknown"),
+        'NICE': int(stat[16]),
+        'PRI': int(stat[15]) + 100,
+        'RTPR': os.sched_getparam(pid).sched_priority,
+        'Status': "N" if now - proc.create_time() < ATOP_INTERVAL else "-",
+        'State': atop_state(stat[0]),
+        'CPU': proc.cpu_percent(None),
+        'CMD': cmd,
+    }
 
 def predict(threshold: float=0.75):
+    """
+    Scans running processes, returns (pids, predictions, confidences) where the three lists line up index by index
+    """
+    artifact = load_model()
+    model = artifact["model"]
 
-    # Load the trained model
-    try:
-        rf_classifier = joblib.load(str(Path.home())+"/.menoa/process_scanner.pkl")
-    except:
-        ## TODO: Handle this better
-        download_process_model()
+    processes = list(psutil.process_iter())
 
-
-    # Columns: ['TRUN', 'TSLPI', 'TSLPU', 'POLI', 'NICE', 'PRI', 'RTPR', 'CPUNR', 'Status', 'State', 'CPU', 'CMD', 'label']
-
-    # Get the current processes
-    pids = ["padding"]
-
-    processes = []
-    for proc in psutil.process_iter(['pid', 'name', 'status', 'create_time', 'memory_percent', 'cpu_percent']):
+    # cpu_percent() compares against the previous call, so the first reading is always 0
+    for proc in processes:
         try:
-            # Get process details as a dictionary
-            info = proc.info
-
-            pid = info['pid']
-            pids.append(pid)
-
-            # RTPR and POLI
-            poli = os.sched_getscheduler(pid)
-            ## In the dataset this is either 'norm' or 0, in practice its always 0
-            param  = os.sched_getparam(pid)
-            rtpr = param.sched_priority
-
-            # TSLPI and TSLPU
-
-            tslpi = get_tslpi(pid)
-            tslpu = get_tslpu(pid)
-
-            # State
-
-            ## State of E is not a standard state, read paper to see what it is, right now it's mapped to dead (X)
-            state = get_process_state(pid).upper()
-
-            # TRUN
-            trun = get_trun(pid)
-
-            processes.append({
-                'TRUN': trun,
-                'TSLPI': tslpi,
-                'TSLPU': tslpu,
-                'POLI': poli,
-                'NICE': proc.nice(),
-                'PRI': 20 + proc.nice() + 100,
-                'RTPR': rtpr,
-                'Status': info['status'],
-                'State': state,
-                'CPU': info['cpu_percent'],
-                'CMD': info['name']
-            })
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            proc.cpu_percent(None)
+        except psutil.Error:
             pass
+    time.sleep(1)
 
-    # Create a DataFrame from the processes
-    test_data = pd.DataFrame(processes)
+    now = time.time()
+    pids = []
+    rows = []
+    for proc in processes:
+        try:
+            row = process_features(proc, now)
+        except (psutil.Error, OSError):
+            continue  # Exited or unreadable, skip it so pids and rows stay aligned
+        pids.append(proc.pid)
+        rows.append(row)
 
-    # Preprocess the test data (same preprocessing steps as in training)
-    le = LabelEncoder()
-    for col in test_data.columns:
-        if test_data[col].dtype == 'object':
-            test_data[col] = le.fit_transform(test_data[col])
+    if not rows:
+        return ([], [], [])
 
-    X_test = test_data
-    y_test = [0] * len(X_test)  # Target variable (all benign)
-
-    # Make predictions on the test data
-    y_pred = rf_classifier.predict(X_test)
-
-    y_proba = rf_classifier.predict_proba(X_test)
-
-    malicious_count = 0
-    benign_count = 0
-    total = 0
+    features = pd.DataFrame(rows).reindex(columns=artifact["metadata"]["feature_columns"])
+    malicious_probabilities = model.predict_proba(features)[:, 1]
 
     predictions = []
     confidences = []
-
-
-    for i, probs in enumerate(y_proba):
-        total +=1
-
-        prob_malicious = probs[1]  # Probability of class 1
-        prob_benign = probs[0]
-
+    for prob_malicious in malicious_probabilities:
         if prob_malicious >= threshold:
-            pred_class = 1
-        else:
-            pred_class = 0
-
-        #print(threshold, prob_malicious, pred_class, prob_malicious>=threshold)
-
-        if pred_class == 1:
             predictions.append("Malicious")
-            confidences.append(prob_malicious)
-
-            malicious_count += 1
+            confidences.append(float(prob_malicious))
         else:
             predictions.append("benign")
-            confidences.append(prob_benign)
+            confidences.append(float(1 - prob_malicious))
 
-            benign_count += 1
+    return (pids, predictions, confidences)
 
-    read_confidences = [float(x) for x in confidences]
-        
-    return (pids, predictions, read_confidences)
 
 def set_scanning_delay(seconds):
     """

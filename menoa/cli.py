@@ -416,18 +416,16 @@ def process():
     pass
 
 @process.command(name="scan")
-@click.option('--threshold', type=float, required=False)
-def process_scan(threshold=0.75):
+@click.option('--threshold', type=float, required=False, help="Defaults to the threshold in the config")
+def process_scan(threshold=None):
     """
     Scans running processes with given threshold
     """
 
     import menoa.utils.process_utils as process_utils
 
-    #print(process_utils.predict())
-
     if threshold is None:
-        threshold = 0.75
+        threshold = process_utils.get_process_threshold()
 
     results = process_utils.predict(threshold)
 
