@@ -34,8 +34,8 @@ Ordered by priority. Work top to bottom, one at a time.
 - [x] **17. `menoa process scan` ignores the configured threshold**: defaults to the config value now
 - [x] **18. Hard-coded `/home/jack` icon paths**; `.desktop` uses unexpanded `~`. Fixed, everything uses the icon bundled in the package (`utils.ICON_PATH`); the menu entry is rewritten every init with the absolute `menoa-gui` path, and no longer downloads its icon
 - [x] **19. Versioned feeds**: `current_version` never saved, patches re-appended forever, `add_feed` omitted `current_version`. Fixed like network feeds: versioning removed, every reload downloads the whole file and replaces it atomically; `last_refreshed` is now recorded for clam feeds
-- [ ] **20. Network page**: fake interface summary ([network_utils.py](menoa/utils/network_utils.py)). Fixed: set lookup, normalized cache files, consistent threat counts
-- [ ] **21. "Check System Binaries" blocks the GUI thread** for ~7-12s while hashing ~2.5k binaries ([attestation_page.py](menoa/pages/attestation_page.py)). Fixed: POST timeout, table refresh, result message
+- [x] **20. Network page**: fake interface summary. Fixed, real interfaces from psutil. Also fixed: the GUI never showed a malicious connection (matches were only printed by the worker process), no downloaded feed looked like "all clear", `menoa network scan` always exited 0 (now 0 clean / 1 malicious / 2 nothing checked)
+- [x] **21. "Check System Binaries" blocks the GUI thread** for ~7-12s while hashing ~2.5k binaries. Fixed, it runs on a worker thread behind a busy bar (`run_with_progress`)
 
 ## Low
 

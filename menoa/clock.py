@@ -45,7 +45,7 @@ try:
 
         if time.time()-networkClock >= networkDelay:
             print("Networked")
-            connections_check(False, True)
+            connections_check(desktop_notification=True)
             networkClock=time.time()
 
         if time.time()-processClock >= processDelay:

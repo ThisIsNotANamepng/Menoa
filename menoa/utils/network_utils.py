@@ -2,18 +2,14 @@
 Handles backend for network connection monitoring
 
 TODO:
-    - Nothing happens when a threat is detected, it just prints a message
-    - Need to fetch the list from a server to refresh feed
-    - Need to add ability to add custom threat feeds
-    - Need a clock to actually check the connections for threats
-    - The conn display list is updated with connections_check(), when there's a clock for running clock() it will be running twice haphazardly
+    - Need a clock to check the connections and refresh the feeds in the background
 """
 
 import psutil, csv, time
 import menoa.utils.utils as utils
 from pathlib import Path
 import tomli, tomli_w
-import io, os, re, shlex, subprocess, ipaddress
+import io, os, re, shlex, socket, subprocess, ipaddress
 from datetime import datetime
 from urllib.parse import urlparse
 import requests
@@ -37,11 +33,18 @@ class ThreatEndpoints:
         return len(self.endpoints)
 
 def number_of_threats():
-    threat_endpoints = ThreatEndpoints()
-    return(str(threat_endpoints.get_endpoint_count())+" Threats Tracked")
+    return f"{len(reload_endpoints())} Threats Tracked"
 
 def get_interface_summary():
-    return "Interface Summary:\n - eth0: UP\n - wlan0: DOWN"
+    # The machine's network interfaces, whether they're up, and their IPv4 addresses
+    addresses = psutil.net_if_addrs()
+    summary = "Interface Summary:"
+    for name, stats in sorted(psutil.net_if_stats().items()):
+        if name == "lo":
+            continue
+        ips = [a.address for a in addresses.get(name, []) if a.family == socket.AF_INET]
+        summary += f"\n - {name}: {'UP' if stats.isup else 'DOWN'}" + (f" {', '.join(ips)}" if ips else "")
+    return summary
 
 def feed_cache_path(index):
     # Every feed, whatever its format, is stored locally as one normalized IP per line
@@ -68,9 +71,6 @@ def get_feed_summary():
         summary += f" - {i}: " + ("not downloaded" if count is None else f"{count} threats") + "\n"
 
     return summary
-
-def get_realtime_logs():
-    return (connections_check())
 
 def update_all_feeds():
     with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
@@ -238,58 +238,56 @@ def reload_endpoints():
 
     for i in config["network_feeds"]:
         path = feed_cache_path(i)
-        if not path.exists():
-            print(f"Network feed {i} hasn't been downloaded yet, run `menoa network reload {i}`")
-            continue
-
-        with open(path, "r") as f:
-            threat_endpoints.update(line.strip() for line in f if line.strip())
+        if path.exists():  # See missing_feeds()
+            with open(path, "r") as f:
+                threat_endpoints.update(line.strip() for line in f if line.strip())
 
     return threat_endpoints
 
-def connections_check(verbose=True, desktop_notification=False):
+def missing_feeds():
+    # Network feeds in the config that haven't been downloaded, so connections aren't checked against them
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+    return [i for i in config.get("network_feeds", {}) if not feed_cache_path(i).exists()]
 
-    connections = psutil.net_connections(kind="inet")
-    threat_endpoints = ThreatEndpoints()
-    endpoints = threat_endpoints.get_endpoints()
+def connections_check(desktop_notification=False):
+    """
+    Checks the current connections against the downloaded network feeds. Returns one dict per connection with a remote address,
+    {"pid", "process", "remote", "malicious"}, malicious ones first. Raises if no feed is downloaded, since nothing could be checked
+    """
+    endpoints = reload_endpoints()
+    if not endpoints:
+        raise Exception("No network feeds are downloaded, so connections can't be checked (run `menoa network reload`)")
 
-    display_conn_list = ""
-
-    for conn in connections:
-        # Go through connections, check each one to see if it's in the threat list
+    results = []
+    for conn in psutil.net_connections(kind="inet"):
+        if not conn.raddr:
+            continue
 
         # Dual-stack sockets report IPv4 peers as ::ffff:1.2.3.4
-        remote_ip = conn.raddr.ip.removeprefix("::ffff:") if conn.raddr else None
+        ip = conn.raddr.ip.removeprefix("::ffff:")
+        process = ""
+        if conn.pid:  # None for other users' processes unless Menoa runs as root
+            try:
+                process = psutil.Process(conn.pid).name()
+            except psutil.Error:
+                pass
 
-        if remote_ip in endpoints:
-            pid = conn.pid
+        results.append({
+            "pid": conn.pid,
+            "process": process,
+            "remote": f"[{ip}]:{conn.raddr.port}" if ":" in ip else f"{ip}:{conn.raddr.port}",
+            "malicious": ip in endpoints,
+        })
 
-            if verbose:
-                print(f"Match found: Remote IP {conn.raddr.ip}:{conn.raddr.port}")
-                print(f"Local Address: {conn.laddr.ip}:{conn.laddr.port}")
-                print(f"Status: {conn.status}")
-            if pid:
-                try:
-                    proc = psutil.Process(pid)
-                    if verbose:
-                        print(f"PID: {pid}")
-                        print(f"Command: {' '.join(proc.cmdline())}")
-                        print(f"Executable: {proc.exe()}")
-                        print(f"Username: {proc.username()}")
-                except psutil.NoSuchProcess:
-                    if verbose:
-                        print(f"Process {pid} no longer exists.")
-            else:
-                if verbose:
-                    print("No PID associated with this connection.")
-            if verbose: print("-" * 60)
+    results.sort(key=lambda r: not r["malicious"])
 
-            if desktop_notification: utils.alert("Malicious endpoint detected", pid)
-        
-        
-        if conn.raddr: display_conn_list += f"{conn.pid}: {conn.raddr.ip}:{conn.raddr.port}\n"
+    if desktop_notification:
+        for r in results:
+            if r["malicious"]:
+                utils.alert("Malicious endpoint detected", f"{r['process'] or 'A process'} (PID {r['pid'] or 'unknown'}) is connected to {r['remote']}")
 
-    return display_conn_list
+    return results
 
 def add_feed(index, name, description, format, url=None, column=None, command=None, api_key_env=None):
     """

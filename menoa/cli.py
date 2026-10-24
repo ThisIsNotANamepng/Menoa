@@ -306,13 +306,33 @@ def network():
 @network.command(name="scan")
 def network_scan():
     """
-    Scan the current connections against network feeds
+    Checks current connections against the network feeds. Exits 0 if none are malicious, 1 if some are, 2 if no feed is downloaded
     """
     import menoa.utils.network_utils as network_utils
 
-    console.print("[yellow]Starting network scan...[/yellow]")
-    network_utils.connections_check()
-    console.print("[green]Network scan completed.[/green]")
+    for index in network_utils.missing_feeds():
+        err_console.print(f"[yellow]Network feed {index} hasn't been downloaded, run `menoa network reload {index}`[/yellow]")
+
+    try:
+        results = network_utils.connections_check()
+    except Exception as e:
+        console.print(f"[red]Scan failed, connections were NOT checked: {e}[/red]")
+        sys.exit(2)
+
+    malicious = [r for r in results if r["malicious"]]
+    if not malicious:
+        console.print(f"[green]No malicious connections ({len(results)} checked)[/green]")
+        return
+
+    console.print(f"[red]{len(malicious)} malicious connection(s) found![/red]")
+    table = Table(box=box.ROUNDED)
+    table.add_column("PID", justify="right", style="cyan")
+    table.add_column("Process", style="magenta")
+    table.add_column("Remote address", style="red")
+    for r in malicious:
+        table.add_row(str(r["pid"] or "-"), r["process"] or "(unknown, run as root to see)", r["remote"])
+    console.print(table)
+    sys.exit(1)
 
 @network.command(name="reload")
 @click.argument('feed', type=str, required=False)
@@ -324,14 +344,19 @@ def network_reload_feed(feed=False):
     
     if feed:
         console.print(f"[yellow]Reloading {feed}...[/yellow]")
-        network_utils.update_feed(feed)
-        console.print("[green]Feed reloaded[/green]")
+        try:
+            count = network_utils.update_feed(feed)
+        except Exception as e:
+            console.print(f"[red]Reloading {feed} failed: {e}[/red]")
+            sys.exit(1)
+        console.print(f"[green]{feed} reloaded, {count} IPs[/green]")
     else:
         console.print("[yellow]Reloading feeds...[/yellow]")
-        network_utils.update_all_feeds()
-        console.print("[green]Feeds reloaded[/green]")   
-
-    console.print("[green]Network feed reloaded.[/green]")
+        # update_all_feeds() already printed each failure
+        if network_utils.update_all_feeds():
+            console.print("[red]Some feeds failed to reload[/red]")
+            sys.exit(1)
+        console.print("[green]Feeds reloaded[/green]")
 
 @network.command(name="add")
 @click.option('--index', type=str, required=True)

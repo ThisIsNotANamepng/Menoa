@@ -2,10 +2,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 
 from menoa.utils.attestation_utils import get_number_of_binaries, get_binary_data, attest
-
-
-def button_two_action():
-    print("Button Two Clicked!")
+from menoa.pages.progress_dialog import run_with_progress
 
 
 class AttestationPage(QWidget):
@@ -39,11 +36,13 @@ class AttestationPage(QWidget):
 
 
     def run_attestation(self):
-        try:
-            counts = attest()
+        # Hashing ~2.5k binaries takes seconds, so it runs off the GUI thread and the window keeps responding
+        counts = {}
+        failures = run_with_progress(lambda progress: counts.update(attest()) or [], "Checking system binaries...", "Attestation")
+        if failures:
+            QMessageBox.warning(self, "Attestation", "\n".join(failures))
+        else:
             QMessageBox.information(self, "Attestation", "\n".join(f"{status}: {n}" for status, n in sorted(counts.items())))
-        except Exception as e:
-            QMessageBox.warning(self, "Attestation", str(e))
         self.populate_table()
 
     def populate_table(self):

@@ -3,8 +3,17 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 
 from menoa.utils import network_utils
-from menoa.utils.network_utils import number_of_threats, get_interface_summary, reload_endpoints, get_feed_summary
+from menoa.utils.network_utils import number_of_threats, get_interface_summary, get_feed_summary, missing_feeds
 from concurrent.futures import ProcessPoolExecutor
+import html
+
+def format_connections(results):
+    # Fixed columns, malicious connections first and in red
+    lines = [f"{'PID':>7}  {'Process':<20}  Remote address"]
+    for r in results:
+        line = html.escape(f"{r['pid'] or '-':>7}  {r['process'][:20]:<20}  {r['remote']}")
+        lines.append(f'<span style="color: #F44336; font-weight: bold;">{line}  MALICIOUS</span>' if r["malicious"] else line)
+    return "<pre>" + "\n".join(lines) + "</pre>"
 
 class NetworkPage(QWidget):
     def __init__(self):
@@ -17,6 +26,12 @@ class NetworkPage(QWidget):
         self.status_label.setFont(QFont("Arial", 14, QFont.Bold))
         #self.status_label.setStyleSheet("color: #D32F2F; margin: 5px 0;")
 
+        # Malicious connections, or why connections aren't being checked
+        self.alert_label = QLabel()
+        self.alert_label.setWordWrap(True)
+        self.alert_label.setFont(QFont("Arial", 12, QFont.Bold))
+        self.alert_label.hide()
+
         self.refresh_button = QPushButton("↻ Refresh")
         self.refresh_button.setMinimumWidth(100)
         self.refresh_button.clicked.connect(self.handle_refresh)
@@ -25,6 +40,7 @@ class NetworkPage(QWidget):
         top_layout.setSpacing(12)
         top_layout.setContentsMargins(12, 24, 12, 12)
         top_layout.addWidget(self.status_label)
+        top_layout.addWidget(self.alert_label)
         top_layout.addWidget(self.refresh_button, 0)
         self.top_box.setLayout(top_layout)
 
@@ -69,8 +85,12 @@ class NetworkPage(QWidget):
         main_layout.addLayout(left_layout, 1)
         main_layout.addWidget(self.log_group, 2)  # Now wrapped in titled group box
 
+    def show_alert(self, text, color="#F44336"):
+        self.alert_label.setText(text)
+        self.alert_label.setStyleSheet(f"color: {color};")
+        self.alert_label.setVisible(bool(text))
+
     def handle_refresh(self):
-        reload_endpoints()
         self.status_label.setText(number_of_threats())
         self.bottom_box.setText(get_interface_summary()+get_feed_summary())
         # Add visual feedback
@@ -96,19 +116,24 @@ class NetworkPage(QWidget):
         # returned logs. We call result only when done() is True so this is
         # non-blocking.
         if self._future.done():
-            try:
-                logs = self._future.result()
-            except Exception as e:
-                logs = f"Error in background scan: {e}"
-
-            formatted_logs = []
-            formatted_logs.append("PID   Remote address")
-            for line in str(logs).split('\n'):
-                formatted_logs.append(line)
-
-            self.log_box.setText('\n'.join(formatted_logs))
             # Clear future so next timeout will start a new run
-            self._future = None
+            future, self._future = self._future, None
+            try:
+                results = future.result()
+            except Exception as e:
+                self.show_alert(f"Connections aren't being checked: {e}", "#FF9800")
+                self.log_box.setPlainText(str(e))
+                return
+
+            malicious = sum(r["malicious"] for r in results)
+            missing = missing_feeds()
+            if malicious:
+                self.show_alert(f"{malicious} malicious connection(s)!")
+            elif missing:
+                self.show_alert(f"Not checked against {', '.join(missing)}, not downloaded (run `menoa network reload`)", "#FF9800")
+            else:
+                self.show_alert("")
+            self.log_box.setHtml(format_connections(results))
 
 
     def closeEvent(self, event):

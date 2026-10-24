@@ -164,6 +164,42 @@ def test_attestation_flow():
     attest_expecting_error("Set server_url and public_key")
 
 
+def test_gui_stays_responsive():
+    import time
+    from unittest import mock
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from menoa.pages import attestation_page
+
+    write_config(SERVER_URL)
+    seen = {}
+
+    def slow_attest():
+        seen["thread"] = threading.current_thread()
+        time.sleep(0.5)
+        return {"Validated": 3, "Pending": 1}
+
+    messages = []
+    capture = lambda kind: (lambda parent, title, text: messages.append((kind, text)))
+    with mock.patch.object(attestation_page, "attest", slow_attest), \
+         mock.patch.object(attestation_page.QMessageBox, "information", capture("info")), \
+         mock.patch.object(attestation_page.QMessageBox, "warning", capture("warning")):
+        page = attestation_page.AttestationPage()
+        QTimer.singleShot(100, lambda: seen.setdefault("gui_ran_during_check", True))
+        page.run_attestation()
+        assert seen["thread"] is not threading.main_thread() and seen.get("gui_ran_during_check"), seen
+        assert messages == [("info", "Pending: 1\nValidated: 3")], messages
+
+        def failing_attest():
+            raise Exception("Attestation server unreachable")
+        with mock.patch.object(attestation_page, "attest", failing_attest):
+            page.run_attestation()
+        assert messages[-1] == ("warning", "Attestation server unreachable"), messages
+
+
 if __name__ == "__main__":
     test_attestation_flow()
+    test_gui_stays_responsive()
     print("All attestation checks passed")
