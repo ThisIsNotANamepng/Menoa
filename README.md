@@ -88,6 +88,8 @@ Menoa is made specifically for Linux, and it follows the very important principl
 
 3. Run `menoa init`, or just open `menoa-gui`, which sets itself up on first launch. This creates `~/.menoa` and downloads the ClamAV signature databases (a few hundred MB), so the first run takes a few minutes
 
+4. Run `menoa status` to see which tools are turned on and how often they run, and `menoa <tool> toggle` to turn one on or off
+
 ### Windows
 
 1. Switch to Linux
@@ -122,10 +124,10 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [x] Update the last_checked column in the attestation database
 - [ ] Pip doesn't automatically update, add an opt-in setting to have Menoa update itself automatically in the background
 - [x] Get rid of quick/, standard/, and deep/ directories in favor of using the config to determine which feeds to use for each scan
-- [ ] Add option to do different types of scans in the GUI
+- [x] Add option to do different types of scans in the GUI
 - [x] Add util to completely redownload feeds, getting rid of past feed signatures
 - [x] Process scanning returns processes above the threshold as beningn, but only some
-- [ ] Add a status option for cli tools to see whether background work is on or off
+- [x] Add a status option for cli tools to see whether background work is on or off
 - [x] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
 - [x] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
 - [ ] Make opening the gui faster

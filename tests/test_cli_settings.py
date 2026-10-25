@@ -65,9 +65,31 @@ def test_help_text_names_the_right_tool():
     assert "attestation check delay" in run("attestation", "delay", "--help").output.lower()
 
 
+def test_status():
+    # No [yara] section, like configs from before YARA was its own tool: it shows YARA's defaults, on
+    CONFIG.write_text("".join(f"[{tool}]\nscan_delay = 600\nfeed_update_delay = 21600\nenabled = true\nthreshold = 0.7\n" for tool in ("clamav", "network", "process", "attestation")))
+    for tool in ("clam", "network", "process", "attestation"):
+        assert "toggled off" in run(tool, "toggle").output, tool  # On/off for every tool, not True/False
+    run("network", "delay", "90")
+    run("clam", "toggle", "--on")
+
+    result = run("status")
+    rows = {line.split("│")[1].strip(): [cell.strip() for cell in line.split("│")[2:5]] for line in result.output.splitlines() if line.count("│") == 5}
+    assert result.exit_code == 0 and rows == {
+        "Tool": ["Background", "Scan every", "Feeds update every"],
+        "ClamAV": ["on", "10m", "6h"],
+        "YARA": ["on", "10m", "7d"],
+        "Network": ["off", "90s", "6h"],
+        "Process": ["off", "10m", "-"],
+        "Attestation": ["off", "10m", "-"],
+    }, result.output
+    assert "Nothing runs in the background yet" in result.output
+
+
 if __name__ == "__main__":
     test_zero_can_be_set()
     test_out_of_range_values_are_rejected()
     test_yara_toggle()
     test_help_text_names_the_right_tool()
+    test_status()
     print("All CLI settings checks passed")

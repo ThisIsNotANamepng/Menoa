@@ -394,7 +394,7 @@ def clam_toggle_background(on: bool, off: bool) -> None:
         clam_utils.toggle(False)
         console.print("[green]Background scan toggled off[/green]")
     else:
-        console.print(f"[green]Background scan toggled {clam_utils.toggle()}[/green]")
+        console.print(f"[green]Background scan toggled {'on' if clam_utils.toggle() else 'off'}[/green]")
 
 
 @cli.command(name="scan")
@@ -716,7 +716,7 @@ def network_toggle_background_on(on: bool, off: bool) -> None:
         network_utils.toggle(False)
         console.print("[green]Background scan toggled off[/green]")
     else:
-        console.print(f"[green]Background scan toggled {network_utils.toggle()}[/green]")
+        console.print(f"[green]Background scan toggled {'on' if network_utils.toggle() else 'off'}[/green]")
 
 
 @cli.group()
@@ -810,7 +810,7 @@ def process_toggle_background_on(on: bool, off: bool) -> None:
         process_utils.toggle(False)
         console.print("[green]Background scan toggled off[/green]")
     else:
-        console.print(f"[green]Background scan toggled {process_utils.toggle()}[/green]")
+        console.print(f"[green]Background scan toggled {'on' if process_utils.toggle() else 'off'}[/green]")
 
 @process.command(name="model")
 @click.argument('source', required=False)
@@ -950,7 +950,7 @@ def attestation_toggle_background_on(on: bool, off: bool) -> None:
         attestation_utils.toggle(False)
         console.print("[green]Background scan toggled off[/green]")
     else:
-        console.print(f"[green]Background scan toggled {attestation_utils.toggle()}[/green]")
+        console.print(f"[green]Background scan toggled {'on' if attestation_utils.toggle() else 'off'}[/green]")
 
 
 @cli.group(name="shell")
@@ -977,6 +977,44 @@ def shell_interpret_source(source: str) -> None:
     script = script_utils.parse_script(script)
     for i in (script_utils.predict_actions(script)):
         print(i)
+
+def _duration(seconds: Optional[float]) -> str:
+    """
+    Writes a delay in its largest whole unit, like 600 as "10m", "-" when there's none
+    """
+    if seconds is None:
+        return "-"
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds and seconds % size == 0:
+            return f"{int(seconds // size)}{unit}"
+    return f"{seconds:g}s"
+
+@cli.command(name="status")
+def status() -> None:
+    """
+    Shows whether each tool's background work is on or off, and how often it runs
+    """
+    import tomli
+    import menoa.utils.yara_utils as yara_utils
+    from menoa.utils.utils import get_enabled_tools
+
+    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
+        config = tomli.load(f)
+    config["yara"] = yara_utils.get_delay()  # Fills in the defaults for configs from before YARA was its own tool
+    enabled = get_enabled_tools()
+
+    table = Table(box=box.ROUNDED)
+    for column in ("Tool", "Background", "Scan every", "Feeds update every"):
+        table.add_column(column)
+    # The process model ships with Menoa and attestation has no feed, so neither has feeds to update
+    for name, section, has_feeds in (("ClamAV", "clamav", True), ("YARA", "yara", True), ("Network", "network", True),
+                                     ("Process", "process", False), ("Attestation", "attestation", False)):
+        settings = config.get(section, {})
+        table.add_row(name, "[green]on[/green]" if section in enabled else "[red]off[/red]", _duration(settings.get("scan_delay")),
+                      _duration(settings.get("feed_update_delay")) if has_feeds else "-")
+    console.print(table)
+    console.print("[yellow]Nothing runs in the background yet: Menoa has no background clock, so \"on\" means a tool will run once it does. "
+                  "Until then use `menoa scan`, `menoa network scan`, `menoa process scan` and the GUI[/yellow]")
 
 @cli.command()
 def init() -> None:
