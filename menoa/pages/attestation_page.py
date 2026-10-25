@@ -1,12 +1,19 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
+"""
+The Attestation page: checks system binaries against the attestation server's signed hashes, and lists every binary's status
+"""
+
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 
 from menoa.utils.attestation_utils import get_number_of_binaries, get_binary_data, attest
 from menoa.pages.progress_dialog import run_with_progress
 
 
 class AttestationPage(QWidget):
-    def __init__(self):
+    """
+    A button to check the binaries, and a table of every binary in the attestation database
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Menoa - Attestation")
         self.layout = QVBoxLayout(self)
@@ -35,8 +42,10 @@ class AttestationPage(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
 
 
-    def run_attestation(self):
-        # Hashing ~2.5k binaries takes seconds, so it runs off the GUI thread and the window keeps responding
+    def run_attestation(self) -> None:
+        """
+        Checks every binary and shows the counts per status. Hashing ~2.5k binaries takes seconds, so it runs off the GUI thread
+        """
         counts = {}
         failures = run_with_progress(lambda progress: counts.update(attest()) or [], "Checking system binaries...", "Attestation")
         if failures:
@@ -45,7 +54,10 @@ class AttestationPage(QWidget):
             QMessageBox.information(self, "Attestation", "\n".join(f"{status}: {n}" for status, n in sorted(counts.items())))
         self.populate_table()
 
-    def populate_table(self):
+    def populate_table(self) -> None:
+        """
+        Fills the table from the attestation database
+        """
         binary_data = get_binary_data()
 
         # Clear existing items and reset row count

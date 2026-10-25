@@ -1,3 +1,7 @@
+"""
+ClamAV: scanning with clamscan, its signature feeds ([clam_feeds] in the config) and its settings ([clamav])
+"""
+
 import subprocess
 import shutil
 import os
@@ -7,17 +11,21 @@ from datetime import datetime
 import tomli, tomli_w
 from pathlib import Path
 import requests
+from threading import Event
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import menoa.utils.utils as utils
 
 def is_clamscan_available() -> bool:
-    """Check if clamscan is installed and available in PATH."""
+    """
+    Checks if clamscan is installed and on PATH
+    """
     return shutil.which("clamscan") is not None
 
 # The last two are YARA-X's, see yara_utils (clamscan also passes over files over its size limit without a word)
 CLEAN_RESULTS = ("OK", "Empty file", "Symbolic link", "Excluded", "Not a regular file", "Too big to scan")
 
-def result_kind(file, result):
+def result_kind(file: Optional[str], result: str) -> str:
     """
     Classifies an item from scan_path_streaming() as "infected", "clean", or "error" (a file or engine problem, the file wasn't checked)
     """
@@ -32,12 +40,16 @@ CLAMSCAN_STAGES = {"Loading": "Loading signatures", "Compiling": "Compiling sign
 STAGE_LINE = re.compile(r"^(Loading|Compiling):.*\]\s+([\d.]+[KM]?)/([\d.]+[KM]?) \w+$")
 TERMINAL_ESCAPES = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
 
-def _count(text):
-    # clamscan abbreviates counts: "3.29M", "10.00K", "41"
+def _count(text: str) -> float:
+    """
+    Reads one of clamscan's abbreviated counts: "3.29M", "10.00K", "41"
+    """
     return float(text.rstrip("KM")) * {"K": 1e3, "M": 1e6}.get(text[-1], 1)
 
-def _terminal_lines(fd):
-    # Lines and progress updates (ended by "\r") from a pseudo-terminal, as str, until the program on the other side exits
+def _terminal_lines(fd: int) -> Iterator[str]:
+    """
+    Yields lines and progress updates (ended by "\\r") from a pseudo-terminal, as str, until the program on the other side exits
+    """
     buffer = b""
     while True:
         try:
@@ -53,9 +65,11 @@ def _terminal_lines(fd):
     if buffer:
         yield os.fsdecode(TERMINAL_ESCAPES.sub(b"", buffer))
 
-def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None, level=None, on_start=None):
+def scan_path_streaming(path: str, on_progress: Optional[Callable[[str, float, float], None]] = None, on_summary: Optional[Callable[[Dict[str, str]], None]] = None,
+                        feeds: Optional[Sequence[str]] = None, level: Optional[str] = None,
+                        on_start: Optional[Callable[[subprocess.Popen], None]] = None) -> Iterator[Tuple[Optional[str], str]]:
     """
-    Generator that streams clamscan output line-by-line.
+    Generator that streams clamscan output line by line
     Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
     on_progress(stage, done, total) is called while clamscan loads and compiles its signatures (stages in CLAMSCAN_STAGES),
     on_summary(summary) with clamscan's scan summary ({"Scanned files": "12", "Time": "5.3 sec (0 m 5 s)", ...})
@@ -151,7 +165,7 @@ def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None
     if on_summary:
         on_summary(summary)
 
-def read_database_header():
+def read_database_header() -> Optional[List[str]]:
     """
     Returns the header fields of Menoa's daily database, None if it isn't downloaded, [] if it isn't a ClamAV database
     """
@@ -166,7 +180,7 @@ def read_database_header():
 
     return header if header[0] == "ClamAV-VDB" and len(header) >= 9 else []
 
-def get_database_version():
+def get_database_version() -> Tuple[str, str]:
     """
     Returns (version, build date) of Menoa's daily database, read from its header so clamscan isn't needed
     """
@@ -181,7 +195,7 @@ def get_database_version():
 OUTDATED_AFTER_DAYS = 1  # ClamAV publishes a new daily database several times a day, older means updates aren't running
 CRITICAL_AFTER_DAYS = 7  # Where clamscan itself starts warning
 
-def database_freshness():
+def database_freshness() -> Tuple[str, str]:
     """
     Returns (state, text) for Menoa's daily database, state is "fresh", "outdated", "critical", "missing" or "unreadable"
     and text describes it, like "Malware signatures are 3 days old"
@@ -208,9 +222,10 @@ def database_freshness():
         return ("outdated", text)
     return ("fresh", text)
 
-def get_last_time_scanned():
-    # Returns the last time the system was scanned
-
+def get_last_time_scanned() -> str:
+    """
+    Returns when the last ClamAV scan finished, or "Never"
+    """
     try:
         with open(str(Path.home())+"/.menoa/clam_last_scanned", "r") as file:
             last_scanned = file.read().strip()
@@ -219,9 +234,10 @@ def get_last_time_scanned():
     # Older versions of init wrote a placeholder instead of leaving the file missing
     return "Never" if last_scanned in ("", "0", "1970-01-01T00:00:00") else last_scanned
 
-def set_last_time_scanned():
-    # Updates the last time the system was scanned
-
+def set_last_time_scanned() -> None:
+    """
+    Records now as the last time a ClamAV scan finished
+    """
     with open(str(Path.home())+"/.menoa/clam_last_scanned", "w") as file:
         file.write(datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"))
 
@@ -234,7 +250,7 @@ SKIPPED_FILESYSTEMS = {
     "overlay", "fuse.fuse-overlayfs", "fuse.portal",
 }
 
-def skipped_mounts(path):
+def skipped_mounts(path: str) -> List[str]:
     """
     Returns the mount points inside `path` (not `path` itself, scanning one directly still works) with a filesystem in SKIPPED_FILESYSTEMS
     """
@@ -252,11 +268,13 @@ def skipped_mounts(path):
     prefix = os.path.abspath(path).rstrip("/") + "/"
     return sorted(m for m, fstype in mounts.items() if fstype in SKIPPED_FILESYSTEMS and m.startswith(prefix))
 
-def exclude_regex(directory):
-    # clamscan matches --exclude-dir as a POSIX regex against the full path, without a trailing slash
+def exclude_regex(directory: str) -> str:
+    """
+    A --exclude-dir value matching exactly `directory`, clamscan matches it as a POSIX regex against the full path, without a trailing slash
+    """
     return "^" + re.sub(r"([.\[\]{}()\\*+?^$|])", r"\\\1", directory) + "$"
 
-def get_scan_total(path, skip=None, stop=None):
+def get_scan_total(path: str, skip: Optional[set] = None, stop: Optional[Event] = None) -> int:
     """
     Counts the result lines clamscan will print for `path`, for progress bars:
     one per file and per symlink (it doesn't follow them), one per directory it can't open or skips (skipped_mounts), none for fifos or sockets
@@ -286,8 +304,11 @@ def get_scan_total(path, skip=None, stop=None):
     
 DEFAULT_CLAM_FEEDS = ("default_main", "default_daily", "default_bytecode")
 
-def update_all_feeds(progress=None):
-
+def update_all_feeds(progress: Optional[Callable[[str, int, int], None]] = None) -> None:
+    """
+    Downloads every ClamAV feed, the defaults through cvdupdate. Raises on the first failure
+    progress(text, done_bytes, total_bytes) is called while the default databases download, if given
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
         config = file.read()
 
@@ -301,9 +322,9 @@ def update_all_feeds(progress=None):
         if i not in DEFAULT_CLAM_FEEDS:
             update_feed(i)
 
-def update_feed(index):
+def update_feed(index: str) -> None:
     """
-    Updates a feed using the given index which could be a title (as in the "default_daily" in [clam_feeds.default_daily] from the config)
+    Downloads a feed by its index, like "default_daily" for [clam_feeds.default_daily] in the config
     """
 
     if index in DEFAULT_CLAM_FEEDS:
@@ -324,8 +345,10 @@ def update_feed(index):
     utils.progress_download(feed['url'], os.path.expanduser(feed["local_path"]), skip_unchanged=True)
     mark_refreshed([index])
 
-def mark_refreshed(indexes):
-    # Records when feeds were last downloaded, shown by `menoa clam list`
+def mark_refreshed(indexes: Sequence[str]) -> None:
+    """
+    Records when feeds were last downloaded, shown by `menoa clam list`
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
@@ -336,13 +359,13 @@ def mark_refreshed(indexes):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def _streaming_get(progress):
+def _streaming_get(progress: Callable[[str, int, int], None]) -> Callable[..., requests.Response]:
     """
     A requests.get for cvdupdate that streams the body so progress(text, done_bytes, total_bytes) can be reported
     shortcut: relies on cvdupdate only calling requests.get and reading response.content (true for the pinned 1.1.3), recheck when upgrading cvdupdate
     """
 
-    def get(url, **kwargs):
+    def get(url: str, **kwargs: Any) -> requests.Response:
         kwargs.setdefault("timeout", 60)
         response = requests.get(url, stream=True, **kwargs)
         name = url.rsplit("/", 1)[-1]
@@ -359,14 +382,9 @@ def _streaming_get(progress):
 
     return get
 
-def update_clamav_feed(progress=None):
+def update_clamav_feed(progress: Optional[Callable[[str, int, int], None]] = None) -> None:
     """
-    Updates the feed using cvdupdate, which uses clamav's servers
-
-    Only used for clamav feeds bytecode.cvd, main.cvd, daily.cvd (downloaded as daily.cvd)
-
-    Assumes that all clamav default feed files are in ~/.menoa/feeds/clam/
-
+    Downloads the default databases (main.cvd, daily.cvd, bytecode.cvd) into ~/.menoa/feeds/clam with cvdupdate, from ClamAV's servers
     progress(text, done_bytes, total_bytes) is called while each database downloads, if given
     """
     # Run cvdupdate in-process, the `cvdupdate` command isn't on PATH for pipx installs or desktop launches
@@ -398,10 +416,10 @@ def update_clamav_feed(progress=None):
 
     mark_refreshed(DEFAULT_CLAM_FEEDS)
 
-def add_feed(index, name, url, description, local_path, move_into_default_feed_path=True, level=None):
+def add_feed(index: str, name: str, url: str, description: str, local_path: str, move_into_default_feed_path: bool = True, level: Optional[str] = None) -> None:
     """
-    Adds a clam feed from the config
-    if `move_into_default_feed_path` is True Menoa will try to copy the given filepath into `~/.menoa/feeds/clam/xxxx``
+    Adds a ClamAV feed to the config
+    With move_into_default_feed_path, the file at local_path is copied into ~/.menoa/feeds/clam/ and used from there
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -431,9 +449,9 @@ def add_feed(index, name, url, description, local_path, move_into_default_feed_p
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def remove_feed(index):
+def remove_feed(index: str) -> None:
     """
-    Removes a clam feed from the config
+    Removes a ClamAV feed from the config
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -447,9 +465,9 @@ def remove_feed(index):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def list_feeds():
+def list_feeds() -> Dict[str, Dict[str, Any]]:
     """
-    Returns a dictionary with all of the clam feeds
+    Returns every ClamAV feed in the config, {index: feed}
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -457,9 +475,9 @@ def list_feeds():
 
     return config["clam_feeds"]
 
-def get_delay():
+def get_delay() -> Dict[str, Any]:
     """
-    Returns the delay for scanning
+    Returns the [clamav] settings: scan_delay, feed_update_delay and enabled
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -467,9 +485,9 @@ def get_delay():
 
     return config["clamav"]
 
-def set_scanning_delay(seconds):
+def set_scanning_delay(seconds: float) -> None:
     """
-    Sets the delay for scanning
+    Sets how many seconds background scans wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -481,9 +499,9 @@ def set_scanning_delay(seconds):
         tomli_w.dump(config, f)
 
 
-def set_feed_update_delay(seconds):
+def set_feed_update_delay(seconds: float) -> None:
     """
-    Sets the delay for refresh
+    Sets how many seconds to wait between feed updates
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -494,9 +512,9 @@ def set_feed_update_delay(seconds):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
         
-def toggle(status=None):
+def toggle(status: Optional[bool] = None) -> bool:
     """
-    Toggles scanning, reverses current status if nothing is passed
+    Turns background scanning on or off, reverses the current setting if nothing is passed. Returns the new setting
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:

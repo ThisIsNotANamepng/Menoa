@@ -1,3 +1,7 @@
+"""
+The Process tool: classifies running processes as benign or malicious with a machine learning model, and checks that model before loading it
+"""
+
 import pandas as pd
 import joblib
 import psutil
@@ -13,6 +17,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from pathlib import Path
 import tomli, tomli_w
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 MODEL_PATH = str(Path.home())+"/.menoa/process_scanner.pkl"
 # Menoa's model ships inside the package, so it's never downloaded and new models come with Menoa releases
@@ -22,7 +27,10 @@ BUNDLED_MODEL = Path(__file__).resolve().parent.parent / "models" / "process_mod
 BUILTIN_MODEL_SHA256 = "e57c03addc75284d914eceb3e9c057cfb2df315c4db6b8cefcff18fbdd8bda4b"
 MAX_MODEL_BYTES = 1_000_000_000
 
-def get_model_settings():
+def get_model_settings() -> Dict[str, str]:
+    """
+    Returns the model settings from [process]: model_url and model_public_key, empty for Menoa's bundled model
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         process = tomli.load(f).get("process", {})
 
@@ -32,24 +40,33 @@ def get_model_settings():
         "model_public_key": process.get("model_public_key", ""),
     }
 
-def is_official_model(settings):
+def is_official_model(settings: Dict[str, str]) -> bool:
+    """
+    Whether the settings use Menoa's bundled model
+    """
     return not settings["model_url"]
 
-def is_unsigned_model(settings):
-    # A model the user added without a model_public_key, it's loaded without any check
+def is_unsigned_model(settings: Dict[str, str]) -> bool:
+    """
+    Whether it's a model the user added without a model_public_key, it's loaded without any check
+    """
     return not is_official_model(settings) and not settings["model_public_key"]
 
-def model_public_key(settings):
-    # The key the model must be signed with, None if it isn't signature checked
+def model_public_key(settings: Dict[str, str]) -> Optional[str]:
+    """
+    Returns the key the model must be signed with, None if it isn't signature checked
+    """
     if is_official_model(settings):
         return None  # Checked against BUILTIN_MODEL_SHA256 instead
     return settings["model_public_key"] or None
 
-def model_message(version, sha256):
-    # The exact bytes a model signature covers
+def model_message(version: str, sha256: str) -> bytes:
+    """
+    Returns the exact bytes a model signature covers
+    """
     return f"menoa-model-v1\n{version}\n{sha256}".encode()
 
-def verify_model(model_path, signature_path, settings):
+def verify_model(model_path: str, signature_path: str, settings: Dict[str, str]) -> Optional[str]:
     """
     Checks a model before it's loaded, loading a pickle runs code from it. Raises if it can't be trusted
     - Menoa's model (no model_url): it must be the bundled model, whatever config.toml says
@@ -82,7 +99,7 @@ def verify_model(model_path, signature_path, settings):
 
     return signed["version"]
 
-def load_model():
+def load_model() -> Dict[str, Any]:
     """
     Returns the model artifact made by LinuxProcessesScanning's baseline_model.py: {"model": sklearn Pipeline, "metadata": {...}}
     The pipeline holds its own encoders, so it takes the raw feature values. Installs the model if it's missing
@@ -107,11 +124,13 @@ def load_model():
 
     return artifact
 
-def get_model_version():
-    # Loads the model and gets the embedded model version
+def get_model_version() -> Any:
+    """
+    Loads the model and returns the version stored inside it
+    """
     return load_model()["metadata"]["version"]
 
-def install_process_model(progress=None, settings=None):
+def install_process_model(progress: Optional[Callable[[str, int, int], None]] = None, settings: Optional[Dict[str, str]] = None) -> None:
     """
     Installs the process model to MODEL_PATH: Menoa's bundled model, or the user's from model_url (a URL or a local path), with its
     signature from model_url + ".sig" if it's signature checked. A .xz is decompressed first, its signature is at the url without .xz
@@ -123,7 +142,7 @@ def install_process_model(progress=None, settings=None):
     signed = model_public_key(settings) is not None
     download, signature_download = MODEL_PATH + ".download", MODEL_PATH + ".sig.download"
 
-    def fetch(source, destination, progress=None):
+    def fetch(source: str, destination: str, progress: Optional[Callable[[str, int, int], None]] = None) -> None:
         if "://" in source:
             progress_download(source, destination, progress)
         else:
@@ -149,15 +168,17 @@ def install_process_model(progress=None, settings=None):
             if os.path.exists(leftover):
                 os.remove(leftover)
 
-def decompress_model(source, destination):
-    # Capped, so a hostile .xz can't fill the disk before the model is verified
+def decompress_model(source: str, destination: str) -> None:
+    """
+    Decompresses a .xz model, capped at MAX_MODEL_BYTES so a hostile .xz can't fill the disk before the model is verified
+    """
     with lzma.open(source) as src, open(destination, "wb") as dst:
         while chunk := src.read(1 << 20):
             if dst.tell() + len(chunk) > MAX_MODEL_BYTES:
                 raise Exception(f"Decompressed process model is over {MAX_MODEL_BYTES // 1_000_000} MB, it wasn't used")
             dst.write(chunk)
 
-def set_model(source=None, public_key=""):
+def set_model(source: Optional[str] = None, public_key: str = "") -> None:
     """
     Switches to the model at `source` (a URL or a local path), or back to Menoa's model with no source. With a public_key it must be
     signed with that key, without one a model other than Menoa's isn't checked. The config only changes once the new model is installed
@@ -179,7 +200,7 @@ def set_model(source=None, public_key=""):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def generate_signing_key(private_key_path):
+def generate_signing_key(private_key_path: str) -> str:
     """
     Writes a new Ed25519 private key for signing models, readable only by you, and returns its base64 public key for model_public_key
     """
@@ -192,7 +213,7 @@ def generate_signing_key(private_key_path):
 
     return base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
 
-def sign_model(model_path, private_key_path, version=None):
+def sign_model(model_path: str, private_key_path: str, version: Optional[str] = None) -> str:
     """
     Signs a model with a key from generate_signing_key(), writing model_path + ".sig" to publish next to it
     The version defaults to the one inside the model (metadata.version), returns the version signed
@@ -209,18 +230,18 @@ def sign_model(model_path, private_key_path, version=None):
         json.dump({"version": version, "signature": base64.b64encode(key.sign(model_message(version, sha256))).decode()}, f)
     return version
 
-def get_process_threshold():
+def get_process_threshold() -> float:
     """
-    Gets the threshold for process scanning
+    Returns how confident the model must be to call a process malicious, 0 to 1
     """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
     
     return config["process"]["threshold"]
 
-def set_process_threshold(threshold):
+def set_process_threshold(threshold: float) -> None:
     """
-    Sets the threshold for process scanning
+    Sets how confident the model must be to call a process malicious, 0 to 1
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -236,16 +257,20 @@ ATOP_INTERVAL = 10  # The training data is atop output, whose Status "N" means t
 # Scheduling policy names as atop prints them
 POLICY_NAMES = {os.SCHED_OTHER: "norm", os.SCHED_BATCH: "btch", os.SCHED_IDLE: "idle", os.SCHED_FIFO: "fifo", os.SCHED_RR: "rr"}
 
-def read_stat(path):
-    # Fields of a /proc/.../stat file after the command name, which can contain spaces: [state, ppid, ..., priority (15), nice (16), ...]
+def read_stat(path: str) -> List[str]:
+    """
+    Returns the fields of a /proc/.../stat file after the command name, which can contain spaces: [state, ppid, ..., priority (15), nice (16), ...]
+    """
     with open(path, "r") as f:
         return f.read().rsplit(")", 1)[1].split()
 
-def atop_state(state):
-    # Kernels since 4.14 report idle kernel threads as "I", atop (and the training data) counted them as sleeping
+def atop_state(state: str) -> str:
+    """
+    Returns a process state the way atop wrote it. Kernels since 4.14 report idle kernel threads as "I", atop (and the training data) counted them as sleeping
+    """
     return "S" if state == "I" else state
 
-def process_features(proc, now):
+def process_features(proc: psutil.Process, now: float) -> Dict[str, Any]:
     """
     Reads one process's features the way atop recorded them in the training data
     """
@@ -278,7 +303,7 @@ def process_features(proc, now):
         'CMD': cmd,
     }
 
-def predict(threshold: float=0.75):
+def predict(threshold: float = 0.75) -> Tuple[List[int], List[str], List[float]]:
     """
     Scans running processes, returns (pids, predictions, confidences) where the three lists line up index by index
     """
@@ -325,9 +350,9 @@ def predict(threshold: float=0.75):
     return (pids, predictions, confidences)
 
 
-def set_scanning_delay(seconds):
+def set_scanning_delay(seconds: float) -> None:
     """
-    Sets the delay for scanning
+    Sets how many seconds background scans wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -338,9 +363,9 @@ def set_scanning_delay(seconds):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def get_scanning_delay():
+def get_scanning_delay() -> float:
     """
-    Returns the delay for scanning
+    Returns how many seconds background scans wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -348,19 +373,9 @@ def get_scanning_delay():
 
     return config["process"]["scan_delay"]
 
-def get_scanning_threshold():
+def toggle(status: Optional[bool] = None) -> bool:
     """
-    Returns the threshold for scanning
-    """
-
-    with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
-        config = tomli.load(f)
-
-    return config["process"]["threshold"]
-
-def toggle(status=None):
-    """
-    Toggles scanning, reverses current status if nothing is passed
+    Turns background scanning on or off, reverses the current setting if nothing is passed. Returns the new setting
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:

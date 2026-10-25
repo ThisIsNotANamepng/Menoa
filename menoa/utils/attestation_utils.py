@@ -22,6 +22,7 @@ import sqlite3
 import subprocess
 import time
 from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import requests
 import tomli, tomli_w
@@ -31,7 +32,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 DB_PATH = str(Path.home())+"/.menoa/attestation.db"
 BIN_DIR = "/bin"
 
-def create_table():
+def create_table() -> None:
     """
     Creates the attestation database, one row per binary
     """
@@ -56,24 +57,32 @@ def create_table():
     conn.commit()
     conn.close()
 
-def get_settings():
+def get_settings() -> Tuple[str, str]:
+    """
+    Returns (server_url, public_key) from [attestation] in the config, empty when they aren't set
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
     return config["attestation"].get("server_url", ""), config["attestation"].get("public_key", "")
 
-def system_identity():
-    # The distro and CPU architecture, which together with the package version decide what a binary's hash should be
+def system_identity() -> Tuple[str, str]:
+    """
+    Returns (distro, CPU architecture), which together with the package version decide what a binary's hash should be
+    """
     os_release = platform.freedesktop_os_release()
     return f"{os_release.get('ID', 'unknown')} {os_release.get('VERSION_ID', '')}".strip(), platform.machine()
 
-def signed_message(distro, arch, package, version, path, sha256):
+def signed_message(distro: str, arch: str, package: str, version: str, path: str, sha256: str) -> bytes:
     """
     The exact bytes the server signs for one binary. Every field is bound, so a record can't be moved to another path, package version, or system
     """
     return "\n".join(["menoa-attestation-v1", distro, arch, package, version, path, sha256]).encode()
 
-def verify_record(public_key, distro, arch, package, version, path, sha256, signature):
+def verify_record(public_key: str, distro: str, arch: str, package: str, version: str, path: str, sha256: str, signature: str) -> bool:
+    """
+    Whether signature is the server's signature of this binary's record, see signed_message()
+    """
     try:
         Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key)).verify(
             base64.b64decode(signature), signed_message(distro, arch, package, version, path, sha256))
@@ -81,19 +90,24 @@ def verify_record(public_key, distro, arch, package, version, path, sha256, sign
     except (InvalidSignature, ValueError, TypeError):
         return False
 
-def sha256_file(path):
+def sha256_file(path: str) -> Optional[str]:
+    """
+    Returns the sha256 of a file as hex, None if it can't be read
+    """
     try:
         with open(path, "rb") as f:
             return hashlib.file_digest(f, "sha256").hexdigest()
     except OSError:
         return None
 
-def list_binaries():
-    # Symlinks are checked as the file they point to, which can be outside BIN_DIR (e.g. Ubuntu's coreutils live in /usr/lib)
+def list_binaries() -> List[str]:
+    """
+    Returns every file in BIN_DIR, sorted. Symlinks are checked as the file they point to, which can be outside BIN_DIR (e.g. Ubuntu's coreutils live in /usr/lib)
+    """
     entries = (os.path.join(BIN_DIR, name) for name in os.listdir(BIN_DIR))
     return sorted({os.path.realpath(p) for p in entries if os.path.isfile(p)})
 
-def get_package_owners(paths):
+def get_package_owners(paths: Sequence[str]) -> Dict[str, Tuple[str, str]]:
     """
     Returns {path: (package, version)} for every path a package owns, using one or two package manager calls in total
     """
@@ -132,7 +146,7 @@ def get_package_owners(paths):
 
     return owners
 
-def binary_status(row, public_key):
+def binary_status(row: Tuple, public_key: str) -> str:
     """
     Works out a binary's status from its database row (path, package, version, distro, arch, hash, expected_hash, signature)
     """
@@ -152,7 +166,7 @@ def binary_status(row, public_key):
 
 STATUS_COLUMNS = "path, package, version, distro, arch, hash, expected_hash, signature"
 
-def get_number_of_binaries():
+def get_number_of_binaries() -> int:
     """
     Returns the total number of binaries in the database
     """
@@ -162,7 +176,7 @@ def get_number_of_binaries():
     conn.close()
     return count
 
-def get_binary_data():
+def get_binary_data() -> List[Tuple[str, str, str, str]]:
     """
     Returns (path, version, hash, status) for every binary in the database
     """
@@ -175,7 +189,7 @@ def get_binary_data():
 
     return [(row[0], row[2], row[5], binary_status(row, public_key)) for row in rows]
 
-def attest():
+def attest() -> Dict[str, int]:
     """
     Hashes every binary in BIN_DIR, fetches signed expected hashes for new or upgraded ones, and alerts on tampering
     Returns {status: count}. Raises if the server couldn't be used, after the local check is done and saved
@@ -261,9 +275,9 @@ def attest():
 
     return counts
 
-def toggle(status=None):
+def toggle(status: Optional[bool] = None) -> bool:
     """
-    Toggles attestation, reverses current status if nothing is passed
+    Turns background attestation on or off, reverses the current setting if nothing is passed. Returns the new setting
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -282,9 +296,9 @@ def toggle(status=None):
     if status is None: return not current
     else: return status
 
-def set_scanning_delay(seconds):
+def set_scanning_delay(seconds: float) -> None:
     """
-    Sets the delay for scanning
+    Sets how many seconds background checks wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -295,9 +309,9 @@ def set_scanning_delay(seconds):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def get_scanning_delay():
+def get_scanning_delay() -> float:
     """
-    Returns the delay for scanning
+    Returns how many seconds background checks wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:

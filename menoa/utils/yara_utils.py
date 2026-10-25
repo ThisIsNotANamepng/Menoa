@@ -9,6 +9,8 @@ Scans run in their own process (python -m menoa.utils.yara_utils), like clamscan
 import itertools, os, stat, subprocess, sys, time
 from datetime import datetime
 from pathlib import Path
+from threading import Event
+from typing import IO, Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 import tomli, tomli_w
 
 import menoa.utils.utils as utils
@@ -20,7 +22,10 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 TIMEOUT = 60  # Seconds per file
 RULES_MARKER = "#rules"  # Sent in place of a file name with the rule count, real file names are absolute paths
 
-def _load():
+def _load() -> Dict[str, Any]:
+    """
+    Reads the config, with the [yara] defaults filled in
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
     # Configs from before YARA was its own tool don't have these sections
@@ -28,26 +33,38 @@ def _load():
     config.setdefault("yara_feeds", {})
     return config
 
-def _save(config):
+def _save(config: Dict[str, Any]) -> None:
+    """
+    Writes the config back
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
 # = Settings
 
-def get_delay():
+def get_delay() -> Dict[str, Any]:
+    """
+    Returns the [yara] settings: scan_delay, feed_update_delay and enabled
+    """
     return _load()["yara"]
 
-def set_scanning_delay(seconds):
+def set_scanning_delay(seconds: float) -> None:
+    """
+    Sets how many seconds background scans wait between runs
+    """
     config = _load()
     config["yara"]["scan_delay"] = seconds
     _save(config)
 
-def set_feed_update_delay(seconds):
+def set_feed_update_delay(seconds: float) -> None:
+    """
+    Sets how many seconds to wait between feed updates
+    """
     config = _load()
     config["yara"]["feed_update_delay"] = seconds
     _save(config)
 
-def toggle(status=None):
+def toggle(status: Optional[bool] = None) -> bool:
     """
     Turns background YARA scanning on or off, reverses the current setting if nothing is passed. Returns the new setting
     """
@@ -58,10 +75,13 @@ def toggle(status=None):
 
 # = Feeds
 
-def list_feeds():
+def list_feeds() -> Dict[str, Dict[str, Any]]:
+    """
+    Returns every YARA feed in the config, {index: feed}
+    """
     return _load()["yara_feeds"]
 
-def add_feed(index, name, url, description, local_path=None, level=None):
+def add_feed(index: str, name: str, url: Optional[str], description: str, local_path: Optional[str] = None, level: Optional[str] = None) -> None:
     """
     Adds a YARA rule feed. Without a url, local_path is a rule file of your own that's used as it is
     """
@@ -83,14 +103,17 @@ def add_feed(index, name, url, description, local_path=None, level=None):
         config["yara_feeds"][index]["level"] = level
     _save(config)
 
-def remove_feed(index):
+def remove_feed(index: str) -> None:
+    """
+    Removes a YARA feed from the config, its rule file stays on disk
+    """
     config = _load()
     if index not in config["yara_feeds"]:
         raise Exception(f"YARA feed {index} not found in config")
     config["yara_feeds"].pop(index)
     _save(config)
 
-def update_feed(index):
+def update_feed(index: str) -> None:
     """
     Downloads a feed's rule file, the whole file every time, replaced in one step
     """
@@ -110,7 +133,7 @@ def update_feed(index):
     config["yara_feeds"][index]["last_refreshed"] = datetime.now().replace(microsecond=0)
     _save(config)
 
-def update_all_feeds():
+def update_all_feeds() -> List[str]:
     """
     Updates every feed, returns a list of the ones that failed (one failing doesn't stop the rest)
     """
@@ -124,11 +147,17 @@ def update_all_feeds():
 
 # = Scanning
 
-def _skipped(path):
+def _skipped(path: str) -> List[str]:
+    """
+    The mounts a scan of path doesn't go into, the same ones clamscan skips
+    """
     from menoa.utils.clam_utils import skipped_mounts
     return skipped_mounts(path) if os.path.isdir(path) else []
 
-def _files(path, skip, onerror=None):
+def _files(path: str, skip: Sequence[str], onerror: Optional[Callable[[OSError], None]] = None) -> Iterator[str]:
+    """
+    Yields every file under path (path itself if it's a file), not going into the directories in skip
+    """
     if not os.path.isdir(path):
         yield path
         return
@@ -137,7 +166,7 @@ def _files(path, skip, onerror=None):
         for name in files:
             yield os.path.join(root, name)
 
-def count_files(path, stop=None):
+def count_files(path: str, stop: Optional[Event] = None) -> int:
     """
     How many results a scan of path will have, for progress bars. stop is a threading.Event that ends the count early
     """
@@ -146,8 +175,11 @@ def count_files(path, stop=None):
         files = itertools.takewhile(lambda _: not stop.is_set(), files)
     return sum(1 for _ in files)
 
-def _records(stream):
-    # Records are "file\0result\0", so any file name works, even one with a newline in it
+def _records(stream: IO[bytes]) -> Iterator[Tuple[str, str]]:
+    """
+    Yields (file, result) from the worker's output
+    Records are "file\\0result\\0", so any file name works, even one with a newline in it
+    """
     fields, buffer = [], b""
     while chunk := stream.read1(1 << 16):
         *complete, buffer = (buffer + chunk).split(b"\0")
@@ -157,7 +189,9 @@ def _records(stream):
             yield os.fsdecode(file), result.decode()
         fields = fields[paired:]
 
-def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, level=None, on_start=None):
+def scan_path_streaming(path: str, on_progress: Optional[Callable[[str, float, float], None]] = None, on_summary: Optional[Callable[[Dict[str, str]], None]] = None,
+                        feeds: Optional[Sequence[str]] = None, level: Optional[str] = None,
+                        on_start: Optional[Callable[[subprocess.Popen], None]] = None) -> Iterator[Tuple[Optional[str], str]]:
     """
     Generator that scans path with every downloaded YARA feed, like clam_utils.scan_path_streaming()
     Yields (file, result) for every file ("OK", "YARA.<rule> FOUND", or why it was skipped or couldn't be read), (None, message) for problems with the scan
@@ -218,12 +252,16 @@ def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, lev
     if on_summary:
         on_summary({"Scanned files": str(scanned), "YARA rules": str(rules), "Time": f"{time.monotonic() - start:.3f} sec"})
 
-def _main(args):
+def _main(args: List[str]) -> None:
+    """
+    The scan worker, run as `python -m menoa.utils.yara_utils PATH RULE_FILE... [--skip=DIR...]`
+    Compiles the rule files, then writes a record for every file under PATH to stdout (see _records())
+    """
     import yara_x
 
     last_flush = time.monotonic()
 
-    def send(file, result, flush=False):
+    def send(file: str, result: str, flush: bool = False) -> None:
         nonlocal last_flush
         sys.stdout.buffer.write(os.fsencode(file) + b"\0" + result.encode() + b"\0")
         # A few times a second, flushing for every file would slow big scans down

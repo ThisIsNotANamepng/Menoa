@@ -1,12 +1,14 @@
 """
-Menoa's colors, the greens from the logo, and the stylesheet they fill (style.qss, $name is a color from the palette)
+Menoa's colors, the greens from the logo, and the stylesheet they fill (style.qss, where each $color_name is a color from the palette)
 Pages take their colors from COLORS instead of writing their own, so dark and light mode both work
 """
 
 import importlib.resources as pkg_resources
 from string import Template
+from typing import Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
 PALETTES = {
     "dark": {
@@ -28,11 +30,13 @@ PALETTES = {
 
 COLORS = dict(PALETTES["dark"])  # Replaced by apply() before any page is made
 
-def freshness_color(state):
-    # For clam_utils.database_freshness() states
+def freshness_color(state: str) -> str:
+    """
+    Returns the color for one of clam_utils.database_freshness()'s states
+    """
     return {"fresh": COLORS["good"], "outdated": COLORS["warning"]}.get(state, COLORS["bad"])
 
-def apply(app, scheme=None):
+def apply(app: QApplication, scheme: Optional[str] = None) -> None:
     """
     Styles the app for scheme ("dark" or "light"), the desktop's color scheme without one
     """

@@ -388,7 +388,6 @@ def test_yara_tool():
 
 
 def test_gui_scans_with_both_engines():
-    import threading
     from PySide6.QtWidgets import QApplication
     from menoa.pages.clam_page import ClamPage
     app = QApplication.instance() or QApplication([])

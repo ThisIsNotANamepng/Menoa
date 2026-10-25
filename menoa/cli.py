@@ -54,6 +54,7 @@ Commands
 """
 
 import sys
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from menoa.utils.utils import initialize, rewrite, feeds_by_engine, FEED_LEVELS
 import click
 from rich.console import Console
@@ -63,9 +64,7 @@ from rich.table import Table
 from rich import box
 
 import menoa.utils.attestation_utils as attestation_utils
-#import menoa.utils.clam_utils as clam_utils
-#import menoa.utils.network_utils as network_utils
-#import utils.process_utils as process_utils
+# The other tools' utils are imported inside the commands that use them, so `menoa --help` doesn't load the process model's libraries
 import menoa.utils.script_utils as script_utils
 
 console = Console()
@@ -73,7 +72,7 @@ err_console = Console(stderr=True)  # Warnings, so they stay out of piped output
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version="0.6.0", prog_name="Menoa")
-def cli():
+def cli() -> None:
     """
     The CLI frontend for Menoa. See menoa.org/docs more information 
     """
@@ -81,18 +80,22 @@ def cli():
 
 
 @cli.group()
-def clam():
-    """ClamAV antivirus related commands"""
+def clam() -> None:
+    """
+    ClamAV antivirus related commands
+    """
     pass
 
 ENGINE_NAMES = {"clam": "ClamAV", "yara": "YARA"}
 
-def feed_options(command):
-    # --feed and --level for every scan command
+def feed_options(command: Callable) -> Callable:
+    """
+    Adds --feed and --level to a scan command
+    """
     command = click.option('--level', type=click.Choice(FEED_LEVELS), help="Only feeds up to this level: quick feeds are in every level, deep feeds only in deep")(command)
     return click.option('--feed', 'feeds', multiple=True, help="Only scan with this feed, a feed index or a path to a file. Repeat it for more")(command)
 
-def pick_feeds(engines, feeds, level):
+def pick_feeds(engines: Tuple[str, ...], feeds: Sequence[str], level: Optional[str]) -> Dict[str, List[str]]:
     """
     Which feeds each engine scans with, {engine: [names]}. A scan with both engines leaves out one that ends up with no feeds
     Exits 2 if a feed is unknown, or nothing is left to scan with
@@ -117,7 +120,7 @@ def pick_feeds(engines, feeds, level):
         sys.exit(2)
     return picked
 
-def scan(path, quiet=False, engines=("clam",), feeds=(), level=None):
+def scan(path: str, quiet: bool = False, engines: Tuple[str, ...] = ("clam",), feeds: Sequence[str] = (), level: Optional[str] = None) -> None:
     """
     Scans path with ClamAV, YARA, or both at once, then exits like clamscan: 0 clean, 1 malware found, 2 scan failed
     feeds and level pick the feeds to scan with (see utils.select_feeds), all of them without either
@@ -147,14 +150,14 @@ def scan(path, quiet=False, engines=("clam",), feeds=(), level=None):
 
     results = {}
 
-    def run(engine, position):
+    def run(engine: str, position: int) -> None:
         stream = {"clam": clam_utils.scan_path_streaming, "yara": yara_utils.scan_path_streaming}[engine]
         label = f"{ENGINE_NAMES[engine]}: " if both else ""
         result_list = results[engine] = {"infected": [], "problems": [], "summary": {}, "error": None}
         progress = None
         stage_bar = None
 
-        def on_progress(stage, done, total):
+        def on_progress(stage: str, done: float, total: float) -> None:
             # clamscan's totals are running estimates that change as it opens each database, so show its percentage
             nonlocal stage_bar
             if not total:  # Nothing to measure, like YARA-X compiling its rules
@@ -233,11 +236,10 @@ def scan(path, quiet=False, engines=("clam",), feeds=(), level=None):
 @clam.command(name="quick")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
 @feed_options
-def clam_quick_scan(quiet, feeds, level):
+def clam_quick_scan(quiet: bool, feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans places in which malware is most often found (~/Downloads)
     """
-    import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting quick scan[/blue]")
     scan(str(Path.home()) + "/Downloads/", quiet, feeds=feeds, level=level)
@@ -245,11 +247,10 @@ def clam_quick_scan(quiet, feeds, level):
 @clam.command(name="full")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
 @feed_options
-def clam_full_scan(quiet, feeds, level):
+def clam_full_scan(quiet: bool, feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans the whole system from /
     """
-    import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting full system scan from /[/blue]")
     scan("/", quiet, feeds=feeds, level=level)
@@ -259,17 +260,16 @@ def clam_full_scan(quiet, feeds, level):
 @click.argument('path', type=str)
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
 @feed_options
-def clam_custom_scan(path, quiet, feeds, level):
+def clam_custom_scan(path: str, quiet: bool, feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Perform a custom Clam scan using a given file/dir path
     """
-    import menoa.utils.clam_utils as clam_utils
 
     console.print(f"[blue]Starting scan from: {path}[/blue]")
     scan(path, quiet, feeds=feeds, level=level)
 
 @clam.command(name="status")
-def clam_status():
+def clam_status() -> None:
     """
     Shows the malware signature version and age. Exits 1 if they're outdated, 2 if they're missing or unreadable
     """
@@ -290,7 +290,7 @@ def clam_status():
 
 @clam.command(name="reload")
 @click.argument('feed', type=str, required=False)
-def clam_reload_feed(feed=False):
+def clam_reload_feed(feed: Optional[str] = None) -> None:
     """
     Reload Clam feed from source. If a name or a url is passed then just reload that feed, else reload all
     """
@@ -313,9 +313,9 @@ def clam_reload_feed(feed=False):
 @click.option('--local-path', type=str, required=True)
 @click.option('--centralize', is_flag=True, default=False)
 @click.option('--level', type=click.Choice(FEED_LEVELS), default=None, help="Which scan levels use it (quick: all of them, the default; standard; deep: only deep scans)")
-def clam_add_feed(index, name, url, description, local_path, centralize, level):
+def clam_add_feed(index: str, name: str, url: str, description: str, local_path: str, centralize: bool, level: Optional[str]) -> None:
     """
-    Add a new Clam feed.
+    Add a new Clam feed
     """
     import menoa.utils.clam_utils as clam_utils
 
@@ -324,7 +324,7 @@ def clam_add_feed(index, name, url, description, local_path, centralize, level):
 
 @clam.command(name="remove")
 @click.argument('index', type=str, required=True)
-def clam_remove_feed(index):
+def clam_remove_feed(index: str) -> None:
     """
     Remove an existing Clam feed
     """
@@ -334,7 +334,7 @@ def clam_remove_feed(index):
     console.print(f"[green]{index} removed![/green]")
 
 @clam.command(name="list")
-def clam_list_feeds():
+def clam_list_feeds() -> None:
     """
     Print a table of the current Clam feeds
     """
@@ -361,7 +361,7 @@ def clam_list_feeds():
 @clam.command(name="delay")
 @click.option('--update', required=False, is_flag=True)
 @click.argument('seconds', type=click.IntRange(min=0), required=False)
-def clam_set_delay(update, seconds=None):
+def clam_set_delay(update: bool, seconds: Optional[int] = None) -> None:
     """
     Set/get scan or feed update delay (in seconds) for Clam. If no delay is passed, prints the delay and exits
     """
@@ -381,7 +381,7 @@ def clam_set_delay(update, seconds=None):
 @clam.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def clam_toggle_background(on, off):
+def clam_toggle_background(on: bool, off: bool) -> None:
     """
     Toggle Clam background scanning on/off
     """
@@ -403,7 +403,7 @@ def clam_toggle_background(on, off):
 @click.option('--full', is_flag=True, help="Scan the whole system from /")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
 @feed_options
-def scan_command(path, quick, full, quiet, feeds, level):
+def scan_command(path: Optional[str], quick: bool, full: bool, quiet: bool, feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans a path with ClamAV and YARA rules at once (one engine alone if the other has no feeds to use). Exits 0 if clean, 1 if malware is found, 2 if a scan failed
     """
@@ -416,14 +416,16 @@ def scan_command(path, quick, full, quiet, feeds, level):
 
 
 @cli.group()
-def yara():
-    """YARA rule scanning (with YARA-X) related commands"""
+def yara() -> None:
+    """
+    YARA rule scanning (with YARA-X) related commands
+    """
     pass
 
 @yara.command(name="scan")
 @click.argument('path', type=str)
 @feed_options
-def yara_custom_scan(path, feeds, level):
+def yara_custom_scan(path: str, feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans a file/dir path with the YARA feeds
     """
@@ -432,7 +434,7 @@ def yara_custom_scan(path, feeds, level):
 
 @yara.command(name="quick")
 @feed_options
-def yara_quick_scan(feeds, level):
+def yara_quick_scan(feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans places in which malware is most often found (~/Downloads) with the YARA feeds
     """
@@ -441,7 +443,7 @@ def yara_quick_scan(feeds, level):
 
 @yara.command(name="full")
 @feed_options
-def yara_full_scan(feeds, level):
+def yara_full_scan(feeds: Tuple[str, ...], level: Optional[str]) -> None:
     """
     Scans the whole system from / with the YARA feeds
     """
@@ -450,7 +452,7 @@ def yara_full_scan(feeds, level):
 
 @yara.command(name="reload")
 @click.argument('feed', type=str, required=False)
-def yara_reload_feed(feed=None):
+def yara_reload_feed(feed: Optional[str] = None) -> None:
     """
     Downloads YARA feeds again. If an index is passed just that feed, else all of them
     """
@@ -477,7 +479,7 @@ def yara_reload_feed(feed=None):
 @click.option('--url', type=str, default="", help="Where to download the rule file from")
 @click.option('--local-path', type=str, default=None, help="Where the rule file is kept, a file of your own if there's no --url (default ~/.menoa/feeds/yara/<index>.yar)")
 @click.option('--level', type=click.Choice(FEED_LEVELS), default=None, help="Which scan levels use it (quick: all of them, the default; standard; deep: only deep scans)")
-def yara_add_feed(index, name, description, url, local_path, level):
+def yara_add_feed(index: str, name: str, description: str, url: str, local_path: Optional[str], level: Optional[str]) -> None:
     """
     Add a YARA rule feed
     """
@@ -488,7 +490,7 @@ def yara_add_feed(index, name, description, url, local_path, level):
 
 @yara.command(name="remove")
 @click.argument('index', type=str, required=True)
-def yara_remove_feed(index):
+def yara_remove_feed(index: str) -> None:
     """
     Remove a YARA feed
     """
@@ -498,7 +500,7 @@ def yara_remove_feed(index):
     console.print(f"[green]{index} removed![/green]")
 
 @yara.command(name="list")
-def yara_list_feeds():
+def yara_list_feeds() -> None:
     """
     Print a table of the current YARA feeds
     """
@@ -516,7 +518,7 @@ def yara_list_feeds():
 @yara.command(name="delay")
 @click.option('--update', required=False, is_flag=True)
 @click.argument('seconds', type=click.IntRange(min=0), required=False)
-def yara_set_delay(update, seconds=None):
+def yara_set_delay(update: bool, seconds: Optional[int] = None) -> None:
     """
     Set/get scan or feed update delay (in seconds) for YARA. If no delay is passed, prints the delay and exits
     """
@@ -536,7 +538,7 @@ def yara_set_delay(update, seconds=None):
 @yara.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def yara_toggle_background(on, off):
+def yara_toggle_background(on: bool, off: bool) -> None:
     """
     Toggle YARA background scanning on/off
     """
@@ -550,12 +552,14 @@ def yara_toggle_background(on, off):
 
 
 @cli.group()
-def network():
-    """Network scanning related commands"""
+def network() -> None:
+    """
+    Network scanning related commands
+    """
     pass
 
 @network.command(name="scan")
-def network_scan():
+def network_scan() -> None:
     """
     Checks current connections against the network feeds. Exits 0 if none are malicious, 1 if some are, 2 if no feed is downloaded
     """
@@ -587,7 +591,7 @@ def network_scan():
 
 @network.command(name="reload")
 @click.argument('feed', type=str, required=False)
-def network_reload_feed(feed=False):
+def network_reload_feed(feed: Optional[str] = None) -> None:
     """
     Reload network feed(s) from source
     """
@@ -618,7 +622,8 @@ def network_reload_feed(feed=False):
 @click.option('--column', type=str, help="Header name or 0-based column number holding the IP/URL (csv)")
 @click.option('--command', type=str, help="Command that prints one indicator per line (command)")
 @click.option('--api-key-env', type=str, help="Environment variable holding the API key (misp)")
-def network_add_feed(index, name, description, feed_format, url, column, command, api_key_env):
+def network_add_feed(index: str, name: str, description: str, feed_format: str, url: Optional[str], column: Optional[str],
+                     command: Optional[str], api_key_env: Optional[str]) -> None:
     """
     Add a new network feed and download it
     """
@@ -638,7 +643,7 @@ def network_add_feed(index, name, description, feed_format, url, column, command
 
 @network.command(name="remove")
 @click.argument('index', type=str, required=True)
-def network_remove_feed(index):
+def network_remove_feed(index: str) -> None:
     """
     Remove an existing network feed
     """
@@ -649,9 +654,9 @@ def network_remove_feed(index):
     console.print("[green]Network feed removed.[/green]")
 
 @network.command(name="feeds")
-def network_list_feeds():
+def network_list_feeds() -> None:
     """
-    Show current network feeds.
+    Show current network feeds
     """
     ## TODO: Add non-verbose option 
     import menoa.utils.network_utils as network_utils
@@ -678,7 +683,7 @@ def network_list_feeds():
 @network.command(name="delay")
 @click.option('--update', required=False, is_flag=True)
 @click.argument('seconds', type=click.IntRange(min=0), required=False)
-def network_set_delay(update, seconds=None):
+def network_set_delay(update: bool, seconds: Optional[int] = None) -> None:
     """
     Set/get network scan or feed update delay (in seconds). If no delay is passed, prints the delay and exits
     """
@@ -698,7 +703,7 @@ def network_set_delay(update, seconds=None):
 @network.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def network_toggle_background_on(on, off):
+def network_toggle_background_on(on: bool, off: bool) -> None:
     """
     Toggle network background scanning on/off
     """
@@ -715,14 +720,16 @@ def network_toggle_background_on(on, off):
 
 
 @cli.group()
-def process():
-    """Process scanning related commands"""
+def process() -> None:
+    """
+    Process scanning related commands
+    """
     pass
 
 @process.command(name="scan")
 @click.option('--threshold', type=float, required=False, help="Defaults to the threshold in the config")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about using your own unsigned model")
-def process_scan(threshold=None, quiet=False):
+def process_scan(threshold: Optional[float] = None, quiet: bool = False) -> None:
     """
     Scans running processes with given threshold
     """
@@ -739,7 +746,6 @@ def process_scan(threshold=None, quiet=False):
 
     results = process_utils.predict(threshold)
 
-    #print(results)
     
     if not "Malicious" in results[1]:
         console.print("[green]No malicious processes found[/green]")
@@ -753,7 +759,6 @@ def process_scan(threshold=None, quiet=False):
         table.add_column("Confidence", style="magenta")
 
         for pid, pred, conf in zip(results[0], results[1], results[2]):
-            #print(conf, threshold, conf>threshold)
             if pred == "Malicious" and conf >= threshold:
                 table.add_row(str(pid), pred, f"{conf:.4f}")
 
@@ -761,7 +766,7 @@ def process_scan(threshold=None, quiet=False):
 
 @process.command(name="delay")
 @click.argument('seconds', type=click.FloatRange(min=0), required=False)
-def process_set_delay(seconds=None):
+def process_set_delay(seconds: Optional[float] = None) -> None:
     """
     Set/get process scan delay (in seconds). If no delay is passed, prints the delay and exits
     """
@@ -776,7 +781,7 @@ def process_set_delay(seconds=None):
 
 @process.command(name="threshold")
 @click.argument('threshold', type=click.FloatRange(0, 1), required=False)
-def process_get_threshold(threshold=None):
+def process_get_threshold(threshold: Optional[float] = None) -> None:
     """
     Set/get process scan detection threshold (0 to 1). If no threshold is passed, prints the threshold and exits
     """
@@ -792,7 +797,7 @@ def process_get_threshold(threshold=None):
 @process.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def process_toggle_background_on(on, off):
+def process_toggle_background_on(on: bool, off: bool) -> None:
     """
     Toggle process background scanning on/off
     """
@@ -811,7 +816,7 @@ def process_toggle_background_on(on, off):
 @click.argument('source', required=False)
 @click.option('--public-key', default="", help="Only load the model if it's signed with this key (its signature is SOURCE.sig)")
 @click.option('--default', 'use_default', is_flag=True, help="Go back to Menoa's model")
-def process_model(source, public_key, use_default):
+def process_model(source: Optional[str], public_key: str, use_default: bool) -> None:
     """
     Uses the process model at SOURCE (a URL or a local path). Without --public-key your own model isn't checked,
     only use models you trust: loading one runs code from it. With no SOURCE, shows the current model
@@ -851,7 +856,7 @@ def process_model(source, public_key, use_default):
 
 @process.command(name="keygen")
 @click.argument('private_key', type=click.Path(dir_okay=False))
-def process_keygen(private_key):
+def process_keygen(private_key: str) -> None:
     """
     Creates a key for signing process models. Keep PRIVATE_KEY offline, anyone with it can sign models that run on your users' machines
     """
@@ -871,7 +876,7 @@ def process_keygen(private_key):
 @click.argument('model', type=click.Path(exists=True, dir_okay=False))
 @click.option('--key', 'private_key', required=True, type=click.Path(exists=True, dir_okay=False), help="Private key from `menoa process keygen`")
 @click.option('--model-version', type=str, help="Defaults to the version inside the model")
-def process_sign(model, private_key, model_version):
+def process_sign(model: str, private_key: str, model_version: Optional[str]) -> None:
     """
     Signs a process model, writing MODEL.sig to publish next to it
     """
@@ -900,13 +905,15 @@ def ondevice_toggle():
 """
 
 @cli.group()
-def attestation():
-    """Attestation related commands"""
+def attestation() -> None:
+    """
+    Attestation related commands
+    """
     pass
 
 @attestation.command(name="delay")
 @click.argument('seconds', type=click.FloatRange(min=0), required=False)
-def attestation_set_delay(seconds=None):
+def attestation_set_delay(seconds: Optional[float] = None) -> None:
     """
     Set/get attestation check delay (in seconds). If no delay is passed, prints the delay and exits
     """
@@ -931,7 +938,7 @@ def attest_get_status():
 @attestation.command(name="toggle")
 @click.option('--on', required=False, is_flag=True)
 @click.option('--off', required=False, is_flag=True)
-def attestation_toggle_background_on(on, off):
+def attestation_toggle_background_on(on: bool, off: bool) -> None:
     """
     Toggle attestation background checks on/off
     """
@@ -947,15 +954,17 @@ def attestation_toggle_background_on(on, off):
 
 
 @cli.group(name="shell")
-def shell():
-    """Bash intepreter related commands"""
+def shell() -> None:
+    """
+    Bash interpreter related commands
+    """
     pass
 
 @shell.command(name="explain")
 @click.argument('source', type=str)
-def shell_interpret_source(source):
+def shell_interpret_source(source: str) -> None:
     """
-    Interpret and execute a single bash line or file
+    Explains what a bash script (a file path or URL) would do, without running it
     """
     console.print(f"[yellow]Interpreting: {source}[/yellow]")
     if "http://" in source or "https://" in source:
@@ -970,8 +979,10 @@ def shell_interpret_source(source):
         print(i)
 
 @cli.command()
-def init():
-    """If stuff in .menoa doesn't exist, create it"""
+def init() -> None:
+    """
+    Creates anything missing in ~/.menoa and downloads the feeds
+    """
     failures = initialize()
     if failures:
         console.print("[red]Some setup steps failed, run `menoa init` to retry:[/red]\n" + "\n".join(failures))
@@ -979,11 +990,16 @@ def init():
     console.print("[green]Menoa is set up[/green]")
 
 @cli.command()
-def fix():
-    """Write defaults to .menoa"""
+def fix() -> None:
+    """
+    Deletes ~/.menoa and sets it up again from the defaults, your feeds and settings are lost
+    """
     rewrite()
 
-def main():
+def main() -> None:
+    """
+    The menoa command's entry point
+    """
     cli()
 
 if __name__ == "__main__":

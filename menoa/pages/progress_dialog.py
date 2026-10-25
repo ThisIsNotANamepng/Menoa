@@ -1,16 +1,27 @@
+"""
+A progress bar dialog for slow work like downloads, with the work run off the GUI thread
+"""
+
+from typing import Callable, List
+
 from PySide6.QtCore import Qt, Signal, QObject, QThread, QEventLoop
 from PySide6.QtWidgets import QProgressDialog
 
 class ProgressWorker(QObject):
-    """Runs task(progress) off the GUI thread so the progress dialog stays responsive. The task returns a list of failures or raises"""
+    """
+    Runs task(progress) off the GUI thread so the progress dialog stays responsive. The task returns a list of failures or raises
+    """
     progress = Signal(str, int, int)
     finished = Signal(list)
 
-    def __init__(self, task):
+    def __init__(self, task: Callable[[Callable[[str, int, int], None]], List[str]]) -> None:
         super().__init__()
         self.task = task
 
-    def run(self):
+    def run(self) -> None:
+        """
+        Runs the task and emits finished with its failures, an exception counts as one failure
+        """
         try:
             failures = self.task(lambda text, done, total: self.progress.emit(text, done, total))
         except Exception as e:
@@ -18,8 +29,10 @@ class ProgressWorker(QObject):
         self.finished.emit(failures)
 
 class ProgressDialog(QProgressDialog):
-    """Progress bar for downloads. Its slots run on the GUI thread, since the dialog lives there"""
-    def __init__(self, label, title):
+    """
+    Progress bar for downloads. Its slots run on the GUI thread, since the dialog lives there
+    """
+    def __init__(self, label: str, title: str) -> None:
         super().__init__(label, None, 0, 0)
         self.setWindowTitle(title)
         self.setCancelButton(None)
@@ -31,7 +44,10 @@ class ProgressDialog(QProgressDialog):
         self.setAutoReset(False)
         self.failures = []
 
-    def on_progress(self, text, done, total):
+    def on_progress(self, text: str, done: int, total: int) -> None:
+        """
+        Shows how far the work is, a busy bar when total is 0 (unknown size)
+        """
         if total:
             self.setRange(0, total)
             self.setValue(done)
@@ -40,10 +56,13 @@ class ProgressDialog(QProgressDialog):
             self.setRange(0, 0)  # Unknown size, show a busy bar
             self.setLabelText(text)
 
-    def on_finished(self, failures):
+    def on_finished(self, failures: List[str]) -> None:
+        """
+        Keeps the task's failures for run_with_progress() to return
+        """
         self.failures = failures
 
-def run_with_progress(task, label, title="Menoa"):
+def run_with_progress(task: Callable[[Callable[[str, int, int], None]], List[str]], label: str, title: str = "Menoa") -> List[str]:
     """
     Runs task(progress) with a progress bar and returns its failures, progress(text, done_bytes, total_bytes) updates the bar
     """

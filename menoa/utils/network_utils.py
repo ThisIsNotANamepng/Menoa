@@ -1,42 +1,30 @@
 """
 Handles backend for network connection monitoring
-
-TODO:
-    - Need a clock to check the connections and refresh the feeds in the background
+Connections are only checked by `menoa network scan` or while the Network page is open, until the background clock exists (README)
 """
 
-import psutil, csv, time
+import psutil, csv
 import menoa.utils.utils as utils
 from pathlib import Path
 import tomli, tomli_w
-import io, os, re, shlex, socket, subprocess, ipaddress
+import os, re, shlex, socket, subprocess, ipaddress
 from datetime import datetime
 from urllib.parse import urlparse
 import requests
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 FEED_FORMATS = ("plain", "csv", "misp", "command")
 
-class ThreatEndpoints:
-    def __init__(self):
-        self.endpoints = reload_endpoints()
-
-    def reload(self, item):
-        """Reload the list"""
-        self.endpoints = reload_endpoints()
-
-    def get_endpoints(self):
-        """Return the current list of endpoints."""
-        return self.endpoints
-
-    def get_endpoint_count(self):
-        """Returns the number of endpoints currently tracked"""
-        return len(self.endpoints)
-
-def number_of_threats():
+def number_of_threats() -> str:
+    """
+    Returns how many IPs the downloaded feeds have, like "5 Threats Tracked"
+    """
     return f"{len(reload_endpoints())} Threats Tracked"
 
-def get_interface_summary():
-    # The machine's network interfaces, whether they're up, and their IPv4 addresses
+def get_interface_summary() -> str:
+    """
+    Returns the machine's network interfaces, whether they're up, and their IPv4 addresses, as text
+    """
     addresses = psutil.net_if_addrs()
     summary = "Interface Summary:"
     for name, stats in sorted(psutil.net_if_stats().items()):
@@ -46,13 +34,16 @@ def get_interface_summary():
         summary += f"\n - {name}: {'UP' if stats.isup else 'DOWN'}" + (f" {', '.join(ips)}" if ips else "")
     return summary
 
-def feed_cache_path(index):
-    # Every feed, whatever its format, is stored locally as one normalized IP per line
+def feed_cache_path(index: str) -> Path:
+    """
+    Where a feed's IPs are stored. Every feed, whatever its format, is stored locally as one normalized IP per line
+    """
     return Path.home() / ".menoa" / "feeds" / "network" / f"{index}.txt"
 
-def get_number_of_threats_from_feed(index):
-    # Returns the number of IPs stored for a feed, or None if it hasn't been downloaded
-
+def get_number_of_threats_from_feed(index: str) -> Optional[int]:
+    """
+    Returns the number of IPs stored for a feed, or None if it hasn't been downloaded
+    """
     path = feed_cache_path(index)
     if not path.exists():
         return None
@@ -60,7 +51,10 @@ def get_number_of_threats_from_feed(index):
     with open(path, "r") as f:
         return sum(1 for line in f if line.strip())
 
-def get_feed_summary():
+def get_feed_summary() -> str:
+    """
+    Returns each network feed and how many IPs it has, as text
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
@@ -72,7 +66,10 @@ def get_feed_summary():
 
     return summary
 
-def update_all_feeds():
+def update_all_feeds() -> List[str]:
+    """
+    Downloads every network feed, returns a list of the ones that failed (one failing doesn't stop the rest)
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "r") as file:
         config = file.read()
 
@@ -89,7 +86,7 @@ def update_all_feeds():
 
     return failures
 
-def read_source(url, stored_file=None):
+def read_source(url: str, stored_file: Optional[Path] = None) -> Optional[str]:
     """
     Returns the text at a url, or at a local path ("/..." or "file://...")
     With stored_file, returns None if the server says the url hasn't changed since it was last saved there
@@ -110,7 +107,7 @@ def read_source(url, stored_file=None):
         utils.save_validators(stored_file, url, r)
     return r.text
 
-def fetch_feed_values(feed, stored_file=None):
+def fetch_feed_values(feed: Dict[str, Any], stored_file: Optional[Path] = None) -> Optional[List[str]]:
     """
     Downloads a feed and returns its raw values (one candidate indicator per item), or None if a plain/csv file hasn't changed
     since it was saved to stored_file. Based on feed["format"]:
@@ -158,7 +155,7 @@ def fetch_feed_values(feed, stored_file=None):
 
     raise Exception(f"Unknown feed format {fmt!r}, must be one of {', '.join(FEED_FORMATS)}")
 
-def normalize_indicators(values):
+def normalize_indicators(values: Iterable[str]) -> Set[str]:
     """
     Turns raw feed values into a set of IP strings. Feeds are untrusted input, so anything that isn't an IP is dropped
     Accepts bare IPs and URLs with an IP host ("http://1.2.3.4:8080/x"), text after the first space or "#" is ignored
@@ -186,7 +183,7 @@ def normalize_indicators(values):
 
     return ips
 
-def update_feed(index):
+def update_feed(index: str) -> Optional[int]:
     """
     Downloads a feed using the given index, stores its IPs in the feed's cache file, and returns how many were found
     """
@@ -228,9 +225,10 @@ def update_feed(index):
 
     return count
 
-def reload_endpoints():
-    # Returns a set of the IPs from all downloaded network feeds
-
+def reload_endpoints() -> Set[str]:
+    """
+    Returns a set of the IPs from all downloaded network feeds
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
@@ -244,13 +242,15 @@ def reload_endpoints():
 
     return threat_endpoints
 
-def missing_feeds():
-    # Network feeds in the config that haven't been downloaded, so connections aren't checked against them
+def missing_feeds() -> List[str]:
+    """
+    Returns the network feeds in the config that haven't been downloaded, so connections aren't checked against them
+    """
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
     return [i for i in config.get("network_feeds", {}) if not feed_cache_path(i).exists()]
 
-def connections_check(desktop_notification=False):
+def connections_check(desktop_notification: bool = False) -> List[Dict[str, Any]]:
     """
     Checks the current connections against the downloaded network feeds. Returns one dict per connection with a remote address,
     {"pid", "process", "remote", "malicious"}, malicious ones first. Raises if no feed is downloaded, since nothing could be checked
@@ -289,7 +289,8 @@ def connections_check(desktop_notification=False):
 
     return results
 
-def add_feed(index, name, description, format, url=None, column=None, command=None, api_key_env=None):
+def add_feed(index: str, name: str, description: str, format: str, url: Optional[str] = None, column: Optional[Any] = None,
+             command: Optional[str] = None, api_key_env: Optional[str] = None) -> None:
     """
     Adds a network feed to the config, see fetch_feed_values() for what each format needs
     """
@@ -322,9 +323,9 @@ def add_feed(index, name, description, format, url=None, column=None, command=No
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
 
-def remove_feed(index):
+def remove_feed(index: str) -> None:
     """
-    Removes a network feed from the config
+    Removes a network feed from the config, and its stored IPs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -340,9 +341,9 @@ def remove_feed(index):
 
     feed_cache_path(index).unlink(missing_ok=True)
 
-def list_feeds():
+def list_feeds() -> Dict[str, Dict[str, Any]]:
     """
-    Returns a dictionary with all of the network feeds
+    Returns every network feed in the config, {index: feed}
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -350,9 +351,9 @@ def list_feeds():
 
     return config["network_feeds"]
 
-def get_delay():
+def get_delay() -> Dict[str, Any]:
     """
-    Returns the delay for scanning
+    Returns the [network] settings: scan_delay, feed_update_delay and enabled
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -360,9 +361,9 @@ def get_delay():
 
     return config["network"]
 
-def set_scanning_delay(seconds):
+def set_scanning_delay(seconds: float) -> None:
     """
-    Sets the delay for scanning
+    Sets how many seconds background checks wait between runs
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -374,9 +375,9 @@ def set_scanning_delay(seconds):
         tomli_w.dump(config, f)
 
 
-def set_feed_update_delay(seconds):
+def set_feed_update_delay(seconds: float) -> None:
     """
-    Sets the delay for refresh
+    Sets how many seconds to wait between feed updates
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -387,9 +388,9 @@ def set_feed_update_delay(seconds):
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)
         
-def toggle(status=None):
+def toggle(status: Optional[bool] = None) -> bool:
     """
-    Toggles scanning, reverses current status if nothing is passed
+    Turns background checks on or off, reverses the current setting if nothing is passed. Returns the new setting
     """
 
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
@@ -407,5 +408,3 @@ def toggle(status=None):
 
     if status is None: return not current
     else: return status
-
-#threat_endpoints = ThreatEndpoints()

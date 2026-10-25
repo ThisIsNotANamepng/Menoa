@@ -1,34 +1,32 @@
+"""
+The GUI (menoa-gui): the main window with the left column, the dashboard, and one page per tool
+"""
+
 import sys
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Signal, QObject, QThread, QEventLoop
-from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QSizePolicy, QScrollArea, QToolButton, QDialog, QDialogButtonBox, QPushButton, QTextEdit, QProgressDialog, QMessageBox
-from PySide6.QtGui import QDesktopServices, QCursor, QFont, QLinearGradient, QColor, QBrush, QIcon, QPalette, QPixmap
-from PySide6.QtCore import QUrl, QEvent
 from pathlib import Path
+from typing import List, Optional
+
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QSizePolicy, QScrollArea, QToolButton, QDialog, QDialogButtonBox, QTextEdit, QMessageBox
+from PySide6.QtGui import QCursor, QIcon, QMouseEvent, QPixmap, QShowEvent
 
 from menoa import theme
-
-
 from menoa.pages.network_page import NetworkPage
-
 from menoa.pages.clam_page import ClamPage
-
 from menoa.pages.attestation_page import AttestationPage
-
-from menoa.pages.process_page import ProcessPage
-
-from menoa.pages.process_page import PredictionEngine
-
-
+from menoa.pages.process_page import ProcessPage, PredictionEngine
 from menoa.pages.script_page import ScriptPage
 from menoa.pages.progress_dialog import run_with_progress
-
 from menoa.utils.utils import get_enabled_tools, ICON_PATH
 from menoa.utils.clam_utils import database_freshness, get_last_time_scanned
 
 
 class LearnMoreDialog(QDialog):
-    """Simple modal dialog that shows a title and a read-only, scrollable description."""
-    def __init__(self, title: str, content: str, parent=None):
+    """
+    A modal dialog with a title and a read-only, scrollable description
+    """
+
+    def __init__(self, title: str, content: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"About {title}")
         self.setModal(True)
@@ -55,8 +53,12 @@ class LearnMoreDialog(QDialog):
 
 
 class DashboardCard(QFrame):
+    """
+    A tool's card on the dashboard: its name, whether it's enabled, a short description and a Learn more link. Clicking it opens the tool's page
+    """
     cardClicked = Signal()
-    def __init__(self, title, short_desc, long_desc, link, section):
+
+    def __init__(self, title: str, short_desc: str, long_desc: str, link: str, section: Optional[str]) -> None:
         super().__init__()
         self.section = section  # The tool's section in config.toml, None for tools without a background switch
         # store fields for the learn dialog
@@ -122,7 +124,10 @@ class DashboardCard(QFrame):
         main_layout.addWidget(self.header)
         main_layout.addWidget(content)
 
-    def set_status(self, enabled_tools):
+    def set_status(self, enabled_tools: List[str]) -> None:
+        """
+        Shows Enabled or Disabled from get_enabled_tools(), nothing for tools without a background switch
+        """
         if self.section is None:
             return
         enabled = self.section in enabled_tools
@@ -130,22 +135,30 @@ class DashboardCard(QFrame):
         color = theme.COLORS["good" if enabled else "bad"]
         self.status_label.setStyleSheet(f"color: {color}; border: 1px solid {color}; border-radius: 9px; padding: 1px 8px; font-size: 12px;")
 
-    def mousePressEvent(self, event):
-        """Handle mouse click events for the entire card"""
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """
+        Emits cardClicked when the card is left clicked anywhere
+        """
         if event.button() == Qt.LeftButton:
             self.cardClicked.emit() # Emit signal when card is clicked
             event.accept()
         else:
             super().mousePressEvent(event)
 
-    def open_learn_dialog(self):
-        """Show a native modal dialog with the card's long description."""
+    def open_learn_dialog(self) -> None:
+        """
+        Shows the card's long description in a dialog
+        """
         dlg = LearnMoreDialog(self.title, self.long_desc, parent=self)
         dlg.exec()
 
 class DashboardPage(QWidget):
+    """
+    The stats and a card per tool
+    """
     pageRequested = Signal(int) # Page navigation signal
-    def __init__(self):
+
+    def __init__(self) -> None:
         super().__init__()
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 15, 20, 20)
@@ -268,12 +281,17 @@ class DashboardPage(QWidget):
         self.setLayout(main_layout)
         self.refresh()
 
-    def showEvent(self, event):
-        # Settings can change from the CLI or other pages while Menoa is open
+    def showEvent(self, event: QShowEvent) -> None:
+        """
+        Refreshes the stats and cards, settings can change from the CLI or other pages while Menoa is open
+        """
         self.refresh()
         super().showEvent(event)
 
-    def refresh(self):
+    def refresh(self) -> None:
+        """
+        Reloads which tools are enabled, the signature age and the last scan
+        """
         enabled_tools = get_enabled_tools()
         for card in self.cards:
             card.set_status(enabled_tools)
@@ -289,11 +307,13 @@ class DashboardPage(QWidget):
             self.stat_values[label].setStyleSheet(f"color: {color};")
 
 class MainWidget(QWidget):
-    def __init__(self):
+    """
+    The main window: the left column and the page it selects
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Menoa")
-
-        #self.setMinimumSize(1000, 700)
 
         # Create menu
         self.menu_widget = QListWidget()
@@ -347,11 +367,14 @@ class MainWidget(QWidget):
         self.setLayout(layout)
         self.menu_widget.setCurrentRow(0)
 
-    def display_page(self, index):
+    def display_page(self, index: int) -> None:
+        """
+        Shows a page by its place in the left column
+        """
         self.menu_widget.setCurrentRow(index)
         self.stack.setCurrentIndex(index)
 
-def first_time_setup():
+def first_time_setup() -> None:
     """
     Creates the default config and downloads feeds with a progress bar, then reports any steps that failed
     """
@@ -362,7 +385,10 @@ def first_time_setup():
         QMessageBox.warning(None, "Menoa setup",
             "Some setup steps failed, Menoa will open without them:\n\n" + "\n".join(failures) + "\n\nRun `menoa init` to retry.")
 
-def main():
+def main() -> None:
+    """
+    Starts the GUI, setting Menoa up first if it's the first run
+    """
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(ICON_PATH)))  # Every window uses it
 

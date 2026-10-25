@@ -1,10 +1,14 @@
+"""
+The Command tool: reads a bash script and predicts in plain language what running it would do
+"""
+
 import shlex
 from typing import List, Dict, Any
 import requests
 
-def load_remote_script(url) -> str:
+def load_remote_script(url: str) -> str:
     """
-    Returns the text from a remote url
+    Returns the text at a URL, https:// is added if it has no scheme
     """
 
     if url[0:4] != "http":

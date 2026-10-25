@@ -1,9 +1,15 @@
+"""
+The Malware Scanning page: scans with ClamAV and YARA, each on its own thread with its own progress ring
+"""
+
 from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog,
                                QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidget, QListWidgetItem)
 from PySide6.QtCore import Qt, QSize, QRect, QObject, Signal, Slot, QThread
-from PySide6.QtGui import QPainter, QPen, QColor
+from PySide6.QtGui import QPainter, QPen, QColor, QPaintEvent, QShowEvent
 import sys, os, threading, time
 from contextlib import closing
+import subprocess
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned, database_freshness, update_all_feeds
 import menoa.utils.yara_utils as yara_utils
@@ -23,34 +29,47 @@ class Scanner(QObject):
     status = Signal(str)  # Final result text, emitted after finished so it isn't overwritten by finished's handlers
     log = Signal(str)
 
-    def __init__(self, engine="clam", feeds=None, level=None):
+    def __init__(self, engine: str = "clam", feeds: Optional[Sequence[str]] = None, level: Optional[str] = None) -> None:
         super().__init__()
         self.engine = engine
         self.feeds, self.level = feeds, level  # Which feeds to scan with, see utils.select_feeds()
         self._stop = threading.Event()
         self._process = None
 
-    def stop(self):
-        # From the GUI thread. Killing the engine also ends a big file it's busy with, the scan loop sees the flag between results
+    def stop(self) -> None:
+        """
+        Stops the scan, from the GUI thread. Killing the engine also ends a big file it's busy with, the scan loop sees the flag between results
+        """
         self._stop.set()
         if self._process:
             self._process.kill()
 
-    def _started(self, process):
+    def _started(self, process: subprocess.Popen) -> None:
+        """
+        Keeps the engine's process so stop() can kill it
+        """
         self._process = process
         if self._stop.is_set():  # Stopped while it was starting, before stop() could see it
             process.kill()
 
-    def _check_stop(self):
+    def _check_stop(self) -> None:
+        """
+        Raises InterruptedError once stop() was called
+        """
         if self._stop.is_set():
             raise InterruptedError
 
-    def set_scan_path(self, *paths):
-        # Quick scans check several folders one after another
+    def set_scan_path(self, *paths: str) -> None:
+        """
+        Sets what to scan, quick scans check several folders one after another
+        """
         self.scan_paths = paths
 
     @Slot()
-    def scan(self):
+    def scan(self) -> None:
+        """
+        Scans the paths, run on the worker thread. Reports through the progress, status and log signals, and emits finished at the end
+        """
         clam = self.engine == "clam"
         name = ENGINES[self.engine]
         stream = scan_path_streaming if clam else yara_utils.scan_path_streaming
@@ -62,7 +81,7 @@ class Scanner(QObject):
 
         stages = []
 
-        def on_progress(stage, done, total):
+        def on_progress(stage: str, done: float, total: float) -> None:
             # Before any file is scanned clamscan loads and compiles its signatures and YARA-X compiles its rules, which takes seconds
             self._check_stop()
             if stage not in stages:
@@ -70,7 +89,7 @@ class Scanner(QObject):
                 self.log.emit(f"{stage}...")
             self.status.emit(f"{stage}: {min(done / total, 1):.0%}" if total else f"{stage}...")
 
-        def on_summary(summary):
+        def on_summary(summary: Dict[str, str]) -> None:
             rules = f"{int(summary.get('Known viruses', 0)):,} signatures" if clam else f"{int(summary.get('YARA rules', 0)):,} YARA rules"
             data = f" ({summary['Data scanned']})" if "Data scanned" in summary else ""
             self.log.emit(f"{name}: scanned {summary.get('Scanned files', '?')} files{data} with {rules} in {summary.get('Time', '?').split(' (')[0]}")
@@ -130,23 +149,31 @@ class CircularProgress(QWidget):
     """
     COLORS = {"clam": QColor(theme.COLORS["accent"]), "yara": QColor(214, 58, 196)}
 
-    def __init__(self, parent=None, thickness=10):
+    def __init__(self, parent: Optional[QWidget] = None, thickness: int = 10) -> None:
         super().__init__(parent)
         self._values = {"clam": None, "yara": None}  # None until a scan starts, so an idle circle shows no percentage
         self._max = 1000
         self._thickness = thickness
         self.setMinimumSize(QSize(180, 180))
 
-    def start(self, engines):
-        # Clears the last scan's rings and check mark
+    def start(self, engines: Sequence[str]) -> None:
+        """
+        Clears the last scan's rings and check mark, and shows 0% for the engines in this scan
+        """
         self._values = {engine: 0 if engine in engines else None for engine in self._values}
         self.update()
 
-    def setValue(self, value, engine="clam"):
+    def setValue(self, value: int, engine: str = "clam") -> None:
+        """
+        Sets an engine's progress, in tenths of a percent
+        """
         self._values[engine] = value
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """
+        Draws both rings and the average percentage, or a check mark once every engine finished
+        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         t = self._thickness
@@ -182,7 +209,7 @@ class FeedPicker(QDialog):
     A checklist of every ClamAV and YARA feed, for scanning with just some of them
     """
 
-    def __init__(self, checked, parent=None):
+    def __init__(self, checked: Optional[List[str]], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Choose feeds")
         self.list = QListWidget()
@@ -199,11 +226,18 @@ class FeedPicker(QDialog):
         layout.addWidget(self.list)
         layout.addWidget(buttons)
 
-    def checked(self):
+    def checked(self) -> List[str]:
+        """
+        Returns the indexes of the ticked feeds
+        """
         return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count()) if self.list.item(i).checkState() == Qt.Checked]
 
 class ClamPage(QWidget):
-    def __init__(self):
+    """
+    The progress rings, signature age, feed choice, scan buttons and the scan log
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Menoa - Malware Scanning")
         self._scans = {}  # engine: (Scanner, QThread) of the latest scan
@@ -221,7 +255,10 @@ class ClamPage(QWidget):
             os.path.expanduser("~/Documents")
         ]
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
+        """
+        Builds the page's widgets
+        """
         # Progress rings
         self.circular = CircularProgress(thickness=12)
         legend = QLabel(" ".join(f'<span style="color: {CircularProgress.COLORS[e].name()};">&#9679;</span> {ENGINES[e]} ({ring})'
@@ -298,7 +335,10 @@ class ClamPage(QWidget):
         mlayout.addWidget(btns,   stretch=1)
         mlayout.addWidget(self.log_box, stretch=6)
 
-    def _load_db_info(self):
+    def _load_db_info(self) -> None:
+        """
+        Shows the database version, last scan, signature age and which feeds scans use
+        """
         ver, changed = get_database_version()
         self.status1.setText(f"DB Patch: {ver}, Last changed: {changed}")
         self.status2.setText(f"Last scan: {get_last_time_scanned()}")
@@ -312,25 +352,35 @@ class ClamPage(QWidget):
         self.db_age.setStyleSheet(f"color: {theme.freshness_color(state)};")
         self._show_feeds_used()
 
-    def showEvent(self, event):
-        # Feeds can be added or removed from the CLI while Menoa is open
+    def showEvent(self, event: QShowEvent) -> None:
+        """
+        Refreshes which feeds scans use, feeds can be added or removed from the CLI while Menoa is open
+        """
         self._show_feeds_used()
         super().showEvent(event)
 
-    def _feed_selection(self):
-        # (feeds, level) for utils.feeds_by_engine() from the feed picker
+    def _feed_selection(self) -> Tuple[Union[Tuple, List[str]], Optional[str]]:
+        """
+        Returns (feeds, level) for utils.feeds_by_engine() from the "Scan with" choice
+        """
         choice = self.feed_choice.currentIndex()
         if choice == len(FEED_LEVELS) + 1:
             return self._chosen_feeds or [], None
         return (), FEED_LEVELS[choice - 1] if choice else None
 
-    def _feeds_used(self, engines):
+    def _feeds_used(self, engines: Sequence[str]) -> Dict[str, List[str]]:
+        """
+        Returns the feeds each engine would scan with, {engine: [feed names]}, leaving out engines with none
+        """
         feeds, level = self._feed_selection()
         if feeds == []:  # Everything unticked in "Choose feeds...", an empty list would mean all of them
             return {}
         return {engine: names for engine, names in feeds_by_engine(engines, feeds, level).items() if names}
 
-    def _show_feeds_used(self):
+    def _show_feeds_used(self) -> None:
+        """
+        Shows which feeds scans use next to the "Scan with" choice
+        """
         try:
             used = self._feeds_used(("clam", "yara"))
             self.feeds_used.setText("\n".join(f"{ENGINES[e]}: {', '.join(names)}" for e, names in used.items()) or "No feeds selected")
@@ -338,7 +388,10 @@ class ClamPage(QWidget):
             self.feeds_used.setText(str(e))
 
     @Slot(int)
-    def _feed_choice_changed(self, choice):
+    def _feed_choice_changed(self, choice: int) -> None:
+        """
+        Opens the feed picker for "Choose feeds...", and shows the feeds the new choice uses
+        """
         if choice == len(FEED_LEVELS) + 1:
             picker = FeedPicker(self._chosen_feeds, self)
             if picker.exec() != QDialog.Accepted:
@@ -349,14 +402,17 @@ class ClamPage(QWidget):
         self._show_feeds_used()
 
     @Slot()
-    def update_databases(self):
+    def update_databases(self) -> None:
+        """
+        Downloads every ClamAV and YARA feed with a progress bar, and reports the ones that failed
+        """
         # YARA first, it returns its failures instead of raising, so a failed ClamAV update doesn't skip it
         failures = run_with_progress(lambda progress: yara_utils.update_all_feeds() + (update_all_feeds(progress) or []), "Updating malware signatures...")
         if failures:
             QMessageBox.warning(self, "Menoa", "Updating the malware signatures failed:\n\n" + "\n".join(failures))
         self._load_db_info()
 
-    def _start_scan(self, paths, engines=None):
+    def _start_scan(self, paths: Union[str, Sequence[str]], engines: Optional[Sequence[str]] = None) -> None:
         """
         Starts a Scanner per engine on its own thread. Without engines, both, or just ClamAV while there are no YARA feeds
         """
@@ -404,7 +460,10 @@ class ClamPage(QWidget):
         self.stop_button.setEnabled(True)
 
     @Slot()
-    def stop_scan(self):
+    def stop_scan(self) -> None:
+        """
+        Stops every running engine, the Stop Scan button
+        """
         running = [worker for worker, thread in self._scans.values() if thread.isRunning()]
         if running:
             self.log_box.append("Stopping scan...")
@@ -413,7 +472,10 @@ class ClamPage(QWidget):
         self.stop_button.setEnabled(False)
 
     @Slot()
-    def _stop_before_quit(self):
+    def _stop_before_quit(self) -> None:
+        """
+        Stops a running scan and waits for it when Menoa quits, so clamscan and YARA-X don't keep running
+        """
         self.stop_scan()
         for _, thread in self._scans.values():
             # The finished -> quit signal is queued to this thread, which is blocked here, so quit directly
@@ -421,22 +483,37 @@ class ClamPage(QWidget):
             thread.wait()
 
     @Slot(int)
-    def _clam_progress(self, value):
+    def _clam_progress(self, value: int) -> None:
+        """
+        Moves the ClamAV ring
+        """
         self.circular.setValue(value, "clam")
 
     @Slot(int)
-    def _yara_progress(self, value):
+    def _yara_progress(self, value: int) -> None:
+        """
+        Moves the YARA ring
+        """
         self.circular.setValue(value, "yara")
 
     @Slot(str)
-    def _clam_status(self, text):
+    def _clam_status(self, text: str) -> None:
+        """
+        Shows ClamAV's status
+        """
         self._show_status("clam", text)
 
     @Slot(str)
-    def _yara_status(self, text):
+    def _yara_status(self, text: str) -> None:
+        """
+        Shows YARA's status
+        """
         self._show_status("yara", text)
 
-    def _show_status(self, engine, text):
+    def _show_status(self, engine: str, text: str) -> None:
+        """
+        Shows an engine's status, one line per engine when both are scanning
+        """
         self._statuses[engine] = text
         if len(self._scans) == 1:
             self.status1.setText(text)
@@ -444,14 +521,20 @@ class ClamPage(QWidget):
             self.status1.setText("\n".join(f"{ENGINES[e]}: {self._statuses[e]}" for e in self._scans if e in self._statuses))
 
     @Slot()
-    def _scan_finished(self):
+    def _scan_finished(self) -> None:
+        """
+        Called as each engine finishes, refreshes the page once they all have
+        """
         self._running -= 1
         if not self._running:
             self.stop_button.setEnabled(False)
             self._load_db_info()  # Also updates "Last scan"
 
     @Slot()
-    def quick_scan(self):
+    def quick_scan(self) -> None:
+        """
+        Scans ~/Downloads and ~/Documents with both engines
+        """
         paths = [path for path in self._quick_paths if os.path.exists(path)]
         if not paths:
             self.log_box.append("Nothing to quick scan: ~/Downloads and ~/Documents don't exist")
@@ -459,19 +542,28 @@ class ClamPage(QWidget):
         self._start_scan(paths)
 
     @Slot()
-    def scan_folder(self, engines=None):
+    def scan_folder(self, engines: Optional[Sequence[str]] = None) -> None:
+        """
+        Asks for a folder and scans it, with both engines unless engines is given
+        """
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
             self._start_scan(folder, engines)
 
     @Slot()
-    def scan_file(self, engines=None):
+    def scan_file(self, engines: Optional[Sequence[str]] = None) -> None:
+        """
+        Asks for a file and scans it, with both engines unless engines is given
+        """
         file, _ = QFileDialog.getOpenFileName(self, "Select File to Scan")
         if file:
             self._start_scan(file, engines)
 
     @Slot()
-    def full_scan(self):
+    def full_scan(self) -> None:
+        """
+        Scans the whole system from / with both engines
+        """
         self._start_scan("/")
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
-# For app-wide utils
+"""
+App-wide helpers: notifications, downloads, first-time setup and picking which feeds a scan uses
+"""
+
 import asyncio
-import signal
-from desktop_notifier import DesktopNotifier, Urgency, Button, ReplyField, DEFAULT_SOUND, Icon
+from desktop_notifier import DesktopNotifier, Urgency, DEFAULT_SOUND, Icon
 from pathlib import Path
 import os
 import pathlib
@@ -12,11 +14,12 @@ import requests
 from urllib.parse import unquote
 from tqdm.auto import tqdm
 import tomli
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 # Menoa's icon, shipped inside the package (package_data in setup.py)
 ICON_PATH = Path(__file__).resolve().parent.parent / "notification_icon.png"
 
-def alert(title, text, type="normal", location="desktop"):
+def alert(title: Any, text: Any, type: str = "normal", location: str = "desktop") -> None:
     """
     Raises a notification of an alert, either in the app or on the desktop
     """
@@ -25,7 +28,10 @@ def alert(title, text, type="normal", location="desktop"):
 
     if location=="desktop": asyncio.run(desktop_notification(title, text)) #desktop_notification(title, text)
 
-async def desktop_notification(title, text) -> None:
+async def desktop_notification(title: str, text: str) -> None:
+    """
+    Sends a critical desktop notification with Menoa's icon
+    """
     notifier = DesktopNotifier(app_name="Menoa")
     icon = Icon(path=ICON_PATH)
 
@@ -37,24 +43,33 @@ async def desktop_notification(title, text) -> None:
         icon=icon
     )
 
-def _download_cache_path():
+def _download_cache_path() -> Path:
+    """
+    Where the ETag and Last-Modified of every download are kept, see cached_headers()
+    """
     return Path.home() / ".menoa" / "download_cache.json"
 
-def _load_download_cache():
+def _load_download_cache() -> Dict[str, Dict[str, Any]]:
+    """
+    Returns the download cache, empty if it's missing or unreadable
+    """
     try:
         with open(_download_cache_path()) as f:
             return json.load(f)
     except (OSError, ValueError):
         return {}
 
-def _write_download_cache(cache):
+def _write_download_cache(cache: Dict[str, Dict[str, Any]]) -> None:
+    """
+    Saves the download cache, replaced in one step so a crash can't leave half a file
+    """
     path = _download_cache_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(cache, indent=1))
     os.replace(tmp, path)
 
-def cached_headers(stored_file, url):
+def cached_headers(stored_file: Any, url: str) -> Dict[str, str]:
     """
     Headers asking the server to only send `url` if it changed since it was saved to `stored_file` (it answers 304 otherwise)
     """
@@ -64,19 +79,24 @@ def cached_headers(stored_file, url):
     headers = {"If-None-Match": entry.get("etag"), "If-Modified-Since": entry.get("last_modified")}
     return {k: v for k, v in headers.items() if v}
 
-def save_validators(stored_file, url, response):
-    # Call only once the response is stored in stored_file, or an unchanged reply later would keep a copy that was never written
+def save_validators(stored_file: Any, url: str, response: Any) -> None:
+    """
+    Remembers the response's ETag and Last-Modified for cached_headers()
+    Call only once the response is stored in stored_file, or an unchanged reply later would keep a copy that was never written
+    """
     cache = _load_download_cache()
     cache[str(stored_file)] = {"url": url, "etag": response.headers.get("ETag"), "last_modified": response.headers.get("Last-Modified")}
     _write_download_cache(cache)
 
-def forget_validators(stored_file):
-    # The next request downloads stored_file in full again
+def forget_validators(stored_file: Any) -> None:
+    """
+    Makes the next request download stored_file in full again
+    """
     cache = _load_download_cache()
     if cache.pop(str(stored_file), None) is not None:
         _write_download_cache(cache)
 
-def progress_download(url, filename, progress=None, skip_unchanged=False):
+def progress_download(url: str, filename: Any, progress: Optional[Callable[[str, int, int], None]] = None, skip_unchanged: bool = False) -> Optional[Path]:
     """
     Downloads `url` to `filename`, showing a terminal progress bar, or calling progress(text, done_bytes, total_bytes) instead if given
     With skip_unchanged, a file the server says hasn't changed since last time isn't downloaded again, and None is returned
@@ -115,7 +135,7 @@ def progress_download(url, filename, progress=None, skip_unchanged=False):
         save_validators(path, url, r)
     return path
 
-def initialize_desktop_file():
+def initialize_desktop_file() -> None:
     """
     Adds Menoa to the app menu. Rewritten every init, so it follows Menoa to wherever it's installed now
     """
@@ -143,7 +163,7 @@ Type=Application
 Categories=System;Security;
 """)
 
-def initialize_config(progress=None):
+def initialize_config(progress: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
     """
     Creates anything missing in ~/.menoa: writes a default config if there isn't one, then downloads feeds and the process model
 
@@ -236,7 +256,7 @@ def initialize_config(progress=None):
 
     failures = []
 
-    def step(text, fn):
+    def step(text: str, fn: Callable[[], Any]) -> None:
         print(text)
         if progress:
             progress(text, 0, 0)
@@ -247,7 +267,7 @@ def initialize_config(progress=None):
             failures.append(f"{text}: {e}")
 
     step("Downloading ClamAV signature databases", lambda: clam_update_all_feeds(progress))
-    def network_feeds():
+    def network_feeds() -> None:
         failed = network_update_all_feeds()
         if failed:
             raise Exception("; ".join(failed))
@@ -256,7 +276,7 @@ def initialize_config(progress=None):
 
     import menoa.utils.yara_utils as yara_utils
     if yara_utils.list_feeds():  # None by default yet
-        def yara_feeds():
+        def yara_feeds() -> None:
             failed = yara_utils.update_all_feeds()
             if failed:
                 raise Exception("; ".join(failed))
@@ -273,7 +293,7 @@ def initialize_config(progress=None):
 
 FEED_LEVELS = ("quick", "standard", "deep")
 
-def select_feeds(configured, feeds=None, level=None):
+def select_feeds(configured: Dict[str, Dict[str, Any]], feeds: Optional[Sequence[str]] = None, level: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
     """
     Picks which of the configured feeds ({index: feed}) a scan uses, returned the same way:
     - feeds: exactly these, each a configured index or a path to a file that isn't in the config
@@ -295,7 +315,7 @@ def select_feeds(configured, feeds=None, level=None):
         return {index: feed for index, feed in configured.items() if FEED_LEVELS.index(feed.get("level", "quick")) <= FEED_LEVELS.index(level)}
     return dict(configured)
 
-def feeds_by_engine(engines, feeds=(), level=None):
+def feeds_by_engine(engines: Sequence[str], feeds: Sequence[str] = (), level: Optional[str] = None) -> Dict[str, List[str]]:
     """
     Which feeds each engine ("clam", "yara") scans with, {engine: [feed names]}, see select_feeds(). Raises for an unknown feed
     With several engines each of `feeds` goes to the engine it belongs to (a rule file path, .yar, to YARA), and an engine
@@ -312,7 +332,7 @@ def feeds_by_engine(engines, feeds=(), level=None):
 
     return {engine: list(select_feeds(configured[engine], wanted[engine], level)) for engine in engines if wanted[engine] or not feeds}
 
-def get_enabled_tools():
+def get_enabled_tools() -> List[str]:
     """
     Returns the config sections of the tools which are enabled, like ["clamav", "network"]
     """
@@ -323,7 +343,7 @@ def get_enabled_tools():
     # Configs from before YARA was its own tool don't have a [yara] section, it's on by default
     return [tool for tool in ("clamav", "yara", "network", "process", "attestation") if config.get(tool, {"enabled": True})["enabled"]]
 
-def rewrite():
+def rewrite() -> List[str]:
     """
     Rewrites ~/.menoa to default install
     """
@@ -336,7 +356,7 @@ def rewrite():
 
     return initialize_config()
 
-def initialize(progress=None):
+def initialize(progress: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
     """
     Sets up a fresh install, see initialize_config(). Returns a list of the steps that failed
     """

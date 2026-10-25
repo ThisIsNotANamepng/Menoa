@@ -1,15 +1,22 @@
+"""
+The Network page: checks the machine's connections against the network feeds every second while it's open
+"""
+
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtGui import QCloseEvent, QFont
 
 from menoa import theme
 from menoa.utils import network_utils
 from menoa.utils.network_utils import number_of_threats, get_interface_summary, get_feed_summary, missing_feeds
 from concurrent.futures import ProcessPoolExecutor
 import html
+from typing import Any, Dict, List, Optional
 
-def format_connections(results):
-    # Fixed columns, malicious connections first and in red
+def format_connections(results: List[Dict[str, Any]]) -> str:
+    """
+    Returns connections_check() results as HTML, in fixed columns with malicious connections first and in red
+    """
     lines = [f"{'PID':>7}  {'Process':<20}  Remote address"]
     for r in results:
         line = html.escape(f"{r['pid'] or '-':>7}  {r['process'][:20]:<20}  {r['remote']}")
@@ -17,7 +24,11 @@ def format_connections(results):
     return "<pre>" + "\n".join(lines) + "</pre>"
 
 class NetworkPage(QWidget):
-    def __init__(self):
+    """
+    Network status and feed summary on the left, a live list of connections on the right
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Menoa - Network Scanning")
 
@@ -25,7 +36,6 @@ class NetworkPage(QWidget):
         self.top_box = QGroupBox("Network Status")
         self.status_label = QLabel(number_of_threats())
         self.status_label.setFont(QFont("Arial", 14, QFont.Bold))
-        #self.status_label.setStyleSheet("color: #D32F2F; margin: 5px 0;")
 
         # Malicious connections, or why connections aren't being checked
         self.alert_label = QLabel()
@@ -86,22 +96,29 @@ class NetworkPage(QWidget):
         main_layout.addLayout(left_layout, 1)
         main_layout.addWidget(self.log_group, 2)  # Now wrapped in titled group box
 
-    def show_alert(self, text, color=None):
+    def show_alert(self, text: str, color: Optional[str] = None) -> None:
+        """
+        Shows text above the refresh button in color (red by default), hides it when text is empty
+        """
         self.alert_label.setText(text)
         self.alert_label.setStyleSheet(f"color: {color or theme.COLORS['bad']};")
         self.alert_label.setVisible(bool(text))
 
-    def handle_refresh(self):
+    def handle_refresh(self) -> None:
+        """
+        Reloads the threat count and the interface and feed summary
+        """
         self.status_label.setText(number_of_threats())
         self.bottom_box.setText(get_interface_summary()+get_feed_summary())
         # Add visual feedback
         self.refresh_button.setText("✓ Refreshed")
         QTimer.singleShot(1000, lambda: self.refresh_button.setText("↻ Refresh"))
 
-    def update_logs(self):
-        # Submit a background process if none is running. If one is running,
-        # poll it and update UI when it's finished. This prevents overlapping
-        # scans and keeps the GUI responsive.
+    def update_logs(self) -> None:
+        """
+        Called every second: starts a connection check in a background process if none is running,
+        or shows the result of the running one once it's done. Checks never overlap and the GUI stays responsive
+        """
         if self._future is None:
             # Submit the process task. Use the module-level function so it
             # can be pickled by the ProcessPoolExecutor.
@@ -137,8 +154,10 @@ class NetworkPage(QWidget):
             self.log_box.setHtml(format_connections(results))
 
 
-    def closeEvent(self, event):
-        """Ensure background executor is shutdown when the widget closes."""
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Stops the timer and the background process when the page closes
+        """
         try:
             self.timer.stop()
             if hasattr(self, 'executor') and self.executor:

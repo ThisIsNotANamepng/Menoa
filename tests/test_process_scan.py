@@ -3,7 +3,7 @@ Checks that process scan results land on the right PIDs and that live features m
 Run with `python tests/test_process_scan.py` (or pytest). Uses a stub model, so no real model is needed
 """
 
-import contextlib, hashlib, io, json, os, subprocess, sys, tempfile, threading, time
+import contextlib, hashlib, json, os, subprocess, sys, tempfile, threading, time
 from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from unittest import mock

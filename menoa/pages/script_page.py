@@ -1,11 +1,20 @@
+"""
+The Command page: predicts what a bash script would do, typed in or loaded from a URL
+"""
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QInputDialog
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer
 
 from menoa.utils.script_utils import parse_script, predict_actions, load_remote_script
 from menoa.pages.progress_dialog import run_with_progress
+from typing import Callable, List
 
 class ScriptPage(QWidget):
-    def __init__(self):
+    """
+    A script box and buttons on the left, the predicted actions on the right, updated as you type
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Menoa - Bash Parsing")
 
@@ -57,22 +66,26 @@ class ScriptPage(QWidget):
 
         self.setLayout(main_layout)
 
-    def schedule_analysis(self):
-        # Debounce analysis to avoid running on every keystroke
+    def schedule_analysis(self) -> None:
+        """
+        Analyzes the script once typing stops, instead of on every keystroke
+        """
         self.analysis_timer.start(500)  # wait 500ms after last change
 
-    def show_url_dialog(self):
-        # For checking an install.sh before running it
+    def show_url_dialog(self) -> None:
+        """
+        Asks for a script URL and loads it, for checking an install.sh before running it
+        """
         url, ok = QInputDialog.getText(self, "Menoa - Load Script", "Script URL (like https://example.com/install.sh):")
         if ok and url.strip():
             self.load_url(url.strip())
 
-    def load_url(self, url):
+    def load_url(self, url: str) -> None:
         """
         Downloads the script at url off the GUI thread, then analyzes it. A failed download leaves the script box as it was
         """
         script = []
-        def download(progress):
+        def download(progress: Callable[[str, int, int], None]) -> List[str]:
             script.append(load_remote_script(url))
             return []  # No failures, a failed download raises
         failures = run_with_progress(download, f"Downloading {url}...")
@@ -84,7 +97,10 @@ class ScriptPage(QWidget):
         self.run_analysis()
         self.output_view.setPlainText(f"Script from {url}\n\n{self.output_view.toPlainText()}")
 
-    def run_analysis(self):
+    def run_analysis(self) -> None:
+        """
+        Shows the predicted actions of the script in the box
+        """
         script_text = self.script_input.toPlainText()
         if not script_text.strip():
             self.output_view.setPlainText("No script provided.")

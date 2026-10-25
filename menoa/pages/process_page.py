@@ -1,25 +1,36 @@
-import sys
+"""
+The Process page: lists running processes and classifies them with the process model
+"""
+
 import time
 import psutil
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QStatusBar
-from PySide6.QtCore import QTimer, QObject, QDateTime
-from PySide6.QtGui import QFont, QFontDatabase, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtCore import QTimer, QObject
+from PySide6.QtGui import QFont, QColor
 
 from menoa import theme
 from menoa.utils.process_utils import predict, get_process_threshold, set_process_threshold, get_model_version, get_model_settings, is_unsigned_model
 
 class PredictionEngine(QObject):
-    def __init__(self):
+    """
+    Holds the last scan's predictions, so the table can show each process's classification
+    """
+
+    def __init__(self) -> None:
         super().__init__()
         self.data = ([], [])  # Initialize empty data structure
 
-    def scan(self, threshold=0.6):
-        """Perform scan and store results"""
+    def scan(self, threshold: float = 0.6) -> None:
+        """
+        Scans the running processes and keeps the results, see process_utils.predict()
+        """
         self.data = predict(threshold)
 
-    def info(self, pid):
-        """Get prediction info for specific PID"""
+    def info(self, pid: int) -> str:
+        """
+        Returns the last scan's prediction for a PID, "Unscanned" if it wasn't in the scan
+        """
         try:
             idx = self.data[0].index(pid)
             return self.data[1][idx]
@@ -27,7 +38,11 @@ class PredictionEngine(QObject):
             return "Unscanned"
 
 class ProcessPage(QWidget):
-    def __init__(self, engine):
+    """
+    The model version and threshold, a scan button, and a table of running processes with their classification
+    """
+
+    def __init__(self, engine: PredictionEngine) -> None:
         super().__init__()
         self.engine = engine
         self.setWindowTitle("Menoa - Process Scanning")
@@ -110,13 +125,19 @@ class ProcessPage(QWidget):
         # Initial population
         self.populate_table()
 
-    def on_scan(self):
+    def on_scan(self) -> None:
+        """
+        Saves the threshold, scans with it and refreshes the table
+        """
         threshold = self.threshold_input.value()
         set_process_threshold(threshold) # The threshold is changed in the global config.toml when the 'scan' button is hit, change it to then the user changes the threshold at all
         self.engine.scan(threshold)
         self.populate_table()
 
-    def populate_table(self):
+    def populate_table(self) -> None:
+        """
+        Fills the table with the running processes and the last scan's classifications
+        """
         processes = list(psutil.process_iter(attrs=[
             'pid', 'cmdline', 'create_time', 'memory_percent', 'cpu_percent'
         ]))
