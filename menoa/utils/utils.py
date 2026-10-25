@@ -163,6 +163,11 @@ def initialize_config(progress=None):
     feed_update_delay = 21600 # 6 hours
     enabled = true
 
+    [yara]
+    scan_delay = 600 # 10 minutes
+    feed_update_delay = 604800 # 1 week
+    enabled = true
+
     [network]
     scan_delay = 10
     feed_update_delay = 21600 # 6 hours
@@ -206,6 +211,8 @@ def initialize_config(progress=None):
     local_path = "~/.menoa/feeds/clam/bytecode.cvd"
     last_refreshed = 1970-01-01T00:00:00
 
+    [yara_feeds] # YARA rule files, run with YARA-X, see `menoa yara add`
+
     [network_feeds.main]
     format = "plain"
     url = "https://menoa-feeds.us-ord-1.linodeobjects.com/network/main.txt"
@@ -219,7 +226,7 @@ def initialize_config(progress=None):
         with open(config_path, "w") as f:
             f.write(default_string)
 
-    for d in ["feeds/clam", "feeds/network"]:
+    for d in ["feeds/clam", "feeds/yara", "feeds/network"]:
         os.makedirs(home_path + "/.menoa/" + d, exist_ok=True)
 
     # = Downloads
@@ -246,6 +253,14 @@ def initialize_config(progress=None):
             raise Exception("; ".join(failed))
 
     step("Downloading network threat feeds", network_feeds)
+
+    import menoa.utils.yara_utils as yara_utils
+    if yara_utils.list_feeds():  # None by default yet
+        def yara_feeds():
+            failed = yara_utils.update_all_feeds()
+            if failed:
+                raise Exception("; ".join(failed))
+        step("Downloading YARA rules", yara_feeds)
     if not os.path.exists(home_path + "/.menoa/process_scanner.pkl"):
         step("Installing process scanning model", lambda: install_process_model(progress))
 
@@ -264,7 +279,8 @@ def get_enabled_tools():
     with open(str(Path.home())+"/.menoa/config.toml", "rb") as f:
         config = tomli.load(f)
 
-    return [tool for tool in ("clamav", "network", "process", "attestation") if config[tool]["enabled"]]
+    # Configs from before YARA was its own tool don't have a [yara] section, it's on by default
+    return [tool for tool in ("clamav", "yara", "network", "process", "attestation") if config.get(tool, {"enabled": True})["enabled"]]
 
 def rewrite():
     """

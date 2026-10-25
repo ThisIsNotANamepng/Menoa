@@ -1,6 +1,9 @@
 """
 CLI interface for Menoa
 
+Scan
+- Scan with ClamAV and YARA at once
+
 Clam
 - Basic/Full/Custom Scan
 - Reload feed from source
@@ -8,6 +11,14 @@ Clam
 - See current feeds (main.cvd, daily.cvd, any custom feeds)
 - Set scan delay
 - Get scan delay
+- Toggle background on/off
+
+YARA
+- Basic/Full/Custom Scan
+- Reload feeds from source
+- Add/remove feed
+- See current feeds
+- Set/get scan and feed update delay
 - Toggle background on/off
 
 Network
@@ -74,63 +85,100 @@ def clam():
     """ClamAV antivirus related commands"""
     pass
 
-def scan(path, quiet=False):
+ENGINE_NAMES = {"clam": "ClamAV", "yara": "YARA"}
+
+def scan(path, quiet=False, engines=("clam",)):
+    """
+    Scans path with ClamAV, YARA, or both at once, then exits like clamscan: 0 clean, 1 malware found, 2 scan failed
+    """
+    import threading
     import menoa.utils.clam_utils as clam_utils
+    import menoa.utils.yara_utils as yara_utils
 
     # Still scans with old signatures, they catch less but more than nothing. A missing database fails the scan below
-    state, text = clam_utils.database_freshness()
-    if not quiet and state in ("outdated", "critical"):
-        color = "red" if state == "critical" else "yellow"
-        err_console.print(f"[{color}]Warning: {text}, run `menoa clam reload` to update them (--quiet hides this)[/{color}]")
+    if "clam" in engines:
+        state, text = clam_utils.database_freshness()
+        if not quiet and state in ("outdated", "critical"):
+            color = "red" if state == "critical" else "yellow"
+            err_console.print(f"[{color}]Warning: {text}, run `menoa clam reload` to update them (--quiet hides this)[/{color}]")
 
+    both = len(engines) > 1
+    counters = {"clam": clam_utils.get_scan_total, "yara": yara_utils.count_files}
     console.print("[yellow]Counting total files...  [/yellow]", end='')
-    total_files = clam_utils.get_scan_total(path)
-    print(total_files)
+    totals = {engine: counters[engine](path) for engine in engines}
+    print(", ".join(f"{ENGINE_NAMES[e]} {totals[e]}" for e in engines) if both else totals[engines[0]])
 
-    console.print(f"[yellow]Signatures: {', '.join(clam_utils.list_feeds())}[/yellow]")
-    progress = None
-    stage_bar = None
-    summary = {}
+    if "clam" in engines:
+        console.print(f"[yellow]Signatures: {', '.join(clam_utils.list_feeds())}[/yellow]")
+    if "yara" in engines:
+        console.print(f"[yellow]YARA rules: {', '.join(yara_utils.list_feeds()) or 'none'}[/yellow]")
 
-    def on_progress(stage, done, total):
-        # clamscan's totals are running estimates that change as it opens each database, so show its percentage
-        nonlocal stage_bar
-        if stage_bar is None or stage_bar.desc != stage:
-            if stage_bar:
-                stage_bar.close()
-            stage_bar = tqdm(desc=stage, total=100, bar_format="{desc}: {percentage:3.0f}%|{bar}| {elapsed}")
-        stage_bar.n = min(100, round(done / total * 100)) if total else 0
-        stage_bar.refresh()
+    results = {}
 
-    infected = []
-    problems = []
+    def run(engine, position):
+        stream = {"clam": clam_utils.scan_path_streaming, "yara": yara_utils.scan_path_streaming}[engine]
+        label = f"{ENGINE_NAMES[engine]}: " if both else ""
+        result_list = results[engine] = {"infected": [], "problems": [], "summary": {}, "error": None}
+        progress = None
+        stage_bar = None
 
-    try:
-        for file, result in clam_utils.scan_path_streaming(path, on_progress, summary.update):
-            kind = clam_utils.result_kind(file, result)
-            if kind == "infected":
-                infected.append(f"{file} {result}")
-            elif kind == "error":
-                problems.append(f"{file}: {result}" if file else result)
-
-            if progress is None:  # Created once the signatures are loaded, so it doesn't sit at 0% meanwhile
+        def on_progress(stage, done, total):
+            # clamscan's totals are running estimates that change as it opens each database, so show its percentage
+            nonlocal stage_bar
+            if not total:  # Nothing to measure, like YARA-X compiling its rules
+                tqdm.write(f"{label}{stage}...")
+                return
+            if stage_bar is None or stage_bar.desc != label + stage:
                 if stage_bar:
                     stage_bar.close()
-                progress = tqdm(desc="Scanning files", unit="file", total=total_files)
+                stage_bar = tqdm(desc=label + stage, total=100, position=position, bar_format="{desc}: {percentage:3.0f}%|{bar}| {elapsed}")
+            stage_bar.n = min(100, round(done / total * 100))
+            stage_bar.refresh()
 
-            if file:
-                progress.update(1)
-    except Exception as e:
-        for bar in (stage_bar, progress):
-            if bar:
-                bar.close()
-        console.print(f"[red]Scan failed, files were NOT checked: {e}[/red]")
-        sys.exit(2)
+        try:
+            for file, result in stream(path, on_progress, result_list["summary"].update):
+                kind = clam_utils.result_kind(file, result)
+                if kind == "infected":
+                    result_list["infected"].append(f"{file} {result}")
+                elif kind == "error":
+                    result_list["problems"].append(f"{label}{file}: {result}" if file else label + result)
 
-    for bar in (stage_bar, progress):
-        if bar:
-            bar.close()
-    console.print(f"Scanned {summary.get('Scanned files', '?')} files with {int(summary.get('Known viruses', 0)):,} signatures in {summary.get('Time', '?').split(' (')[0]}")
+                if progress is None:  # Created once the signatures are loaded, so it doesn't sit at 0% meanwhile
+                    if stage_bar:
+                        stage_bar.close()
+                    progress = tqdm(desc=f"{label}Scanning files", unit="file", total=totals[engine], position=position)
+
+                if file:
+                    progress.update(1)
+        except Exception as e:
+            result_list["error"] = e
+        finally:
+            for bar in (stage_bar, progress):
+                if bar:
+                    bar.close()
+
+    if both:
+        threads = [threading.Thread(target=run, args=(engine, i), daemon=True) for i, engine in enumerate(engines)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            while thread.is_alive():
+                thread.join(0.2)  # Short waits so Ctrl-C still stops the scan
+    else:
+        run(engines[0], 0)
+
+    for engine in engines:
+        label = f"{ENGINE_NAMES[engine]}: " if both else ""
+        result_list = results[engine]
+        if result_list["error"]:
+            console.print(f"[red]{label}Scan failed, files were NOT checked: {result_list['error']}[/red]")
+            continue
+        summary = result_list["summary"]
+        rules = f"{int(summary.get('Known viruses', 0)):,} signatures" if engine == "clam" else f"{int(summary.get('YARA rules', 0)):,} YARA rules"
+        console.print(f"{label}Scanned {summary.get('Scanned files', '?')} files with {rules} in {summary.get('Time', '?').split(' (')[0]}")
+
+    infected = [line for engine in engines for line in results[engine]["infected"]]
+    problems = [line for engine in engines for line in results[engine]["problems"]]
 
     if problems:
         # A full scan can hit thousands of unreadable files, show the first few
@@ -140,14 +188,15 @@ def scan(path, quiet=False):
         if len(problems) > 20:
             print(f"  ...and {len(problems) - 20} more")
 
-    # Exit codes match clamscan: 0 clean, 1 malware found, 2 scan failed
-    if len(infected) == 0:
-        console.print("[green]No malware found![/green]")
-    else:
+    # Malware found matters more than one engine failing, so it decides the exit code first
+    if infected:
         console.print("[red]Malware found[/red]")
         for line in infected:
             print(line)
         sys.exit(1)
+    if any(results[engine]["error"] for engine in engines):
+        sys.exit(2)
+    console.print("[green]No malware found![/green]")
 
 @clam.command(name="quick")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
@@ -309,6 +358,158 @@ def clam_toggle_background(on, off):
         console.print("[green]Background scan toggled off[/green]")
     else:
         console.print(f"[green]Background scan toggled {clam_utils.toggle()}[/green]")
+
+
+@cli.command(name="scan")
+@click.argument('path', type=str, required=False)
+@click.option('--quick', is_flag=True, help="Scan ~/Downloads, where malware is most often found")
+@click.option('--full', is_flag=True, help="Scan the whole system from /")
+@click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
+def scan_command(path, quick, full, quiet):
+    """
+    Scans a path with ClamAV and YARA rules at once (ClamAV only while there are no YARA feeds). Exits 0 if clean, 1 if malware is found, 2 if a scan failed
+    """
+    if [bool(path), quick, full].count(True) != 1:
+        raise click.UsageError("Pass a path, --quick or --full")
+
+    import menoa.utils.yara_utils as yara_utils
+
+    target = path or (str(Path.home()) + "/Downloads/" if quick else "/")
+    engines = ("clam", "yara") if yara_utils.list_feeds() else ("clam",)
+    if len(engines) == 1:
+        err_console.print("[yellow]No YARA feeds, scanning with ClamAV only (add one with `menoa yara add`)[/yellow]")
+    console.print(f"[blue]Starting scan from: {target}[/blue]")
+    scan(target, quiet, engines)
+
+
+@cli.group()
+def yara():
+    """YARA rule scanning (with YARA-X) related commands"""
+    pass
+
+@yara.command(name="scan")
+@click.argument('path', type=str)
+def yara_custom_scan(path):
+    """
+    Scans a file/dir path with the YARA feeds
+    """
+    console.print(f"[blue]Starting YARA scan from: {path}[/blue]")
+    scan(path, engines=("yara",))
+
+@yara.command(name="quick")
+def yara_quick_scan():
+    """
+    Scans places in which malware is most often found (~/Downloads) with the YARA feeds
+    """
+    console.print("[blue]Starting quick YARA scan[/blue]")
+    scan(str(Path.home()) + "/Downloads/", engines=("yara",))
+
+@yara.command(name="full")
+def yara_full_scan():
+    """
+    Scans the whole system from / with the YARA feeds
+    """
+    console.print("[blue]Starting full system YARA scan from /[/blue]")
+    scan("/", engines=("yara",))
+
+@yara.command(name="reload")
+@click.argument('feed', type=str, required=False)
+def yara_reload_feed(feed=None):
+    """
+    Downloads YARA feeds again. If an index is passed just that feed, else all of them
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    if feed:
+        console.print("[yellow]Reloading feed...[/yellow]")
+        yara_utils.update_feed(feed)
+        console.print("[green]Feed reloaded[/green]")
+        return
+
+    console.print("[yellow]Reloading feeds...[/yellow]")
+    failures = yara_utils.update_all_feeds()
+    for failure in failures:
+        err_console.print(f"[red]{failure}[/red]")
+    if failures:
+        sys.exit(1)
+    console.print("[green]Feeds reloaded[/green]")
+
+@yara.command(name="add")
+@click.option('--index', type=str, required=True)
+@click.option('--name', type=str, required=True)
+@click.option('--description', type=str, required=True)
+@click.option('--url', type=str, default="", help="Where to download the rule file from")
+@click.option('--local-path', type=str, default=None, help="Where the rule file is kept, a file of your own if there's no --url (default ~/.menoa/feeds/yara/<index>.yar)")
+def yara_add_feed(index, name, description, url, local_path):
+    """
+    Add a YARA rule feed
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    yara_utils.add_feed(index, name, url, description, local_path)
+    console.print(f"[green]Added {name}![/green]" + (f" Run `menoa yara reload {index}` to download it" if url else ""))
+
+@yara.command(name="remove")
+@click.argument('index', type=str, required=True)
+def yara_remove_feed(index):
+    """
+    Remove a YARA feed
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    yara_utils.remove_feed(index)
+    console.print(f"[green]{index} removed![/green]")
+
+@yara.command(name="list")
+def yara_list_feeds():
+    """
+    Print a table of the current YARA feeds
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    table = Table(title="YARA Rule Feeds", box=box.ROUNDED)
+    for column in ("Index", "Name", "Description", "Upstream URL", "Local Storage", "Last Refreshed"):
+        table.add_column(column, justify="right" if column == "Index" else "left", style="cyan" if column == "Index" else "magenta", no_wrap=column == "Index")
+
+    for index, feed in yara_utils.list_feeds().items():
+        table.add_row(index, feed["name"], feed["description"], feed["url"], feed["local_path"], str(feed["last_refreshed"]))
+
+    console.print(table)
+
+@yara.command(name="delay")
+@click.option('--update', required=False, is_flag=True)
+@click.argument('seconds', type=click.IntRange(min=0), required=False)
+def yara_set_delay(update, seconds=None):
+    """
+    Set/get scan or feed update delay (in seconds) for YARA. If no delay is passed, prints the delay and exits
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    if seconds is None and update:
+        console.print(f"[green]Feed update delay: {yara_utils.get_delay()['feed_update_delay']}[/green]")
+    elif seconds is None:
+        console.print(f"[green]Scan delay: {yara_utils.get_delay()['scan_delay']}[/green]")
+    elif update:
+        yara_utils.set_feed_update_delay(seconds)
+        console.print(f"[green]Set feed update delay to {seconds}")
+    else:
+        yara_utils.set_scanning_delay(seconds)
+        console.print(f"[green]Set scanning delay to {seconds}")
+
+@yara.command(name="toggle")
+@click.option('--on', required=False, is_flag=True)
+@click.option('--off', required=False, is_flag=True)
+def yara_toggle_background(on, off):
+    """
+    Toggle YARA background scanning on/off
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    if on or off:
+        yara_utils.toggle(on)
+        console.print(f"[green]Background scan toggled {'on' if on else 'off'}[/green]")
+    else:
+        console.print(f"[green]Background scan toggled {'on' if yara_utils.toggle() else 'off'}[/green]")
 
 
 @cli.group()

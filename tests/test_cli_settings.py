@@ -31,6 +31,9 @@ def test_zero_can_be_set():
         (["process", "delay", "0"], "process", "scan_delay"),
         (["process", "threshold", "0"], "process", "threshold"),
         (["attestation", "delay", "0"], "attestation", "scan_delay"),
+        # No [yara] section in this config, like configs from before YARA was its own tool
+        (["yara", "delay", "0"], "yara", "scan_delay"),
+        (["yara", "delay", "--update", "0"], "yara", "feed_update_delay"),
     ]:
         result = run(*args)
         assert result.exit_code == 0, (args, result.output)
@@ -48,8 +51,16 @@ def test_out_of_range_values_are_rejected():
         assert result.exit_code == 2 and "Invalid value" in result.output, (args, result.output)
 
 
+def test_yara_toggle():
+    CONFIG.write_text("[clamav]\nenabled = true\n")
+    assert "toggled off" in run("yara", "toggle", "--off").output
+    assert tomli.loads(CONFIG.read_text())["yara"]["enabled"] is False
+    assert "toggled on" in run("yara", "toggle").output  # No flag flips it
+    assert tomli.loads(CONFIG.read_text())["yara"] == {"scan_delay": 600, "feed_update_delay": 604800, "enabled": True}
+
+
 def test_help_text_names_the_right_tool():
-    for tool, word in (("process", "process"), ("attestation", "attestation"), ("network", "network")):
+    for tool, word in (("process", "process"), ("attestation", "attestation"), ("network", "network"), ("yara", "YARA")):
         assert f"Toggle {word} background" in run(tool, "toggle", "--help").output
     assert "attestation check delay" in run("attestation", "delay", "--help").output.lower()
 
@@ -57,5 +68,6 @@ def test_help_text_names_the_right_tool():
 if __name__ == "__main__":
     test_zero_can_be_set()
     test_out_of_range_values_are_rejected()
+    test_yara_toggle()
     test_help_text_names_the_right_tool()
     print("All CLI settings checks passed")

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication
 app = QApplication.instance() or QApplication([])
 from menoa.main import DashboardPage
 
-TOOLS = ("clamav", "network", "process", "attestation")
+TOOLS = ("clamav", "yara", "network", "process", "attestation")
 
 
 def write_config(enabled):
@@ -48,7 +48,7 @@ def test_cards_open_their_pages():
         QTest.mouseClick(card, Qt.LeftButton)
     # Indexes of the pages in MainWidget's stack
     assert dict(zip([card.title for card in page.cards], requested)) == {
-        "ClamAV Scanner": 1, "Endpoint Scanner": 2, "Process Scanner (beta)": 3, "Attestation (beta)": 4, "Command Predictor (beta)": 5,
+        "ClamAV Scanner": 1, "YARA Scanner": 1, "Endpoint Scanner": 2, "Process Scanner (beta)": 3, "Attestation (beta)": 4, "Command Predictor (beta)": 5,
     }, requested
 
 
@@ -56,7 +56,7 @@ def test_statuses_follow_the_config():
     write_config({"clamav", "attestation"})
     page = DashboardPage()
     assert statuses(page) == {
-        "ClamAV Scanner": "Enabled", "Endpoint Scanner": "Disabled", "Process Scanner (beta)": "Disabled",
+        "ClamAV Scanner": "Enabled", "YARA Scanner": "Disabled", "Endpoint Scanner": "Disabled", "Process Scanner (beta)": "Disabled",
         "Attestation (beta)": "Enabled", "Command Predictor (beta)": "",
     }, statuses(page)
     assert stats(page)["Active Tools"] == "2"
@@ -64,7 +64,7 @@ def test_statuses_follow_the_config():
     # Changed elsewhere (like `menoa process toggle --on`), shown when the dashboard is opened again
     write_config(TOOLS)
     page.show()
-    assert stats(page)["Active Tools"] == "4" and statuses(page)["Process Scanner (beta)"] == "Enabled", stats(page)
+    assert stats(page)["Active Tools"] == "5" and statuses(page)["Process Scanner (beta)"] == "Enabled", stats(page)
 
 
 def test_stats():

@@ -7,10 +7,11 @@ Notes for whoever builds the server side: what clients expect, what was decided,
 | Feed | Built by the server? | Where clients get it |
 |---|---|---|
 | Network (`main.txt`) | Yes | `https://menoa-feeds.us-ord-1.linodeobjects.com/network/main.txt` (`[network_feeds.main]` in the default config) |
+| YARA rules (`menoa.yar`) | Yes, planned | Not in the default config yet (`[yara_feeds]`), see [YARA rules](#yara-rules) |
 | ClamAV signatures | No | Straight from `database.clamav.net` through cvdupdate on the client |
 | Process model | No | Ships inside the Menoa package, pinned by `BUILTIN_MODEL_SHA256` in [process_utils.py](../menoa/utils/process_utils.py). A new model means a new Menoa release |
 
-So for now the server's only job is `main.txt`.
+So the server's jobs are `main.txt` and, once it's added to the default config, `menoa.yar`.
 
 ## What clients expect from `main.txt`
 
@@ -62,7 +63,52 @@ A cron job (every few hours is plenty, since abuse.ch updates every few minutes 
 5. **Sanity check before uploading.** Refuse to publish if the new list is empty or has shrunk by more than half since the last publish (a broken source shouldn't empty everyone's feed), and alert yourself.
 6. Gzip and upload with the command above.
 
+## YARA rules
+
+YARA rules are their own tool in Menoa, next to ClamAV: `menoa yara`, with feeds in `[yara_feeds]` in the config. Clients run them with [YARA-X](https://virustotal.github.io/yara-x/) in a separate process ([yara_utils.py](../menoa/utils/yara_utils.py)), on their own (`menoa yara scan`, the GUI's YARA buttons) or alongside clamscan (`menoa scan`, the GUI's main buttons). Matches show up as `YARA.<rule name> FOUND`, with the same exit codes as ClamAV detections. Clients add a feed with `menoa yara add --index menoa --name ... --description ... --url .../menoa.yar` and download it with `menoa yara reload`.
+
+Why YARA-X and not ClamAV's own YARA support (measured with ClamAV 1.4.4):
+- ClamAV skips modules (`pe`, `elf`, `dotnet`, `math`), `uint16be`/`uint32be` and single-byte hex patterns.
+- A single long string overflows ClamAV's lexer, and every rule after it is dropped without an error. That's why ClamAV loaded only 3,048 of YARA Forge extended's 10,787 rules.
+- YARA-X 1.22 compiles every rule in YARA Forge core and full.
+
+How clients handle a feed:
+- A rule YARA-X can't compile is left out, and the rest of its file still loads.
+- Two feeds can use the same rule name.
+- A feed that loads 0 rules (like an HTML error page saved as `menoa.yar`) is reported as a scan problem, not skipped quietly.
+- Files over 100 MB are skipped, the same limit as clamscan's default.
+
+### Source: YARA Forge
+
+[YARA Forge](https://github.com/YARAHQ/yara-forge) merges about 40 public rule repos (signature-base, ReversingLabs, Elastic and others), quality-checks them, and publishes three packages on GitHub releases: `https://github.com/YARAHQ/yara-forge/releases/latest/download/yara-forge-rules-<core|extended|full>.zip`. Measured on 2026-10-24, using the 2026-10-17 release:
+
+| Package | Rules | YARA-X compile time | ClamAV false positives in `/usr/bin`, `/usr/sbin`, `/usr/lib/x86_64-linux-gnu` (5.6 GB) |
+|---|---|---|---|
+| core | 5,132 | 1.3 s | 0 |
+| extended | 10,787 | 3.8 s | 0 |
+| full | 12,428 | 4.2 s | 0 |
+
+The false-positive column was measured with ClamAV's parser, so it only covers the rules ClamAV could load. Run it again with YARA-X before choosing extended or full.
+
+**Scan time:** a real `menoa clam scan /usr/bin` (2,164 files) took 72.7 s with ClamAV alone, and 72.0 s with YARA Forge core added. YARA-X runs alongside clamscan and finished first.
+
+**Hack tool rules.** With every rule loading, core flagged `/usr/bin/nping` (nmap's packet tool) as `YARA.SEKOIA_Tool_Nping_Strings`. About 580 core rules detect legitimate offensive or admin tools by name (`*_Tool_*`, `*_Hacktool_*`, `*_HKTL_*`). On a machine with nmap or CTF tools, they'd fire on files the user installed on purpose. Recommendation: leave them out of `menoa.yar` in the build job, and publish them as an optional second feed (`menoa-tools.yar`) for people who want to know about tools on their machine. Decide before the first publish.
+
+Start with **core**, the package YARA Forge recommends for low false positives. Most of the extra rules in full use the `pe` module, which only matters for Windows files. Only 21 rules in full use `elf`.
+
+### Build job
+
+1. Download the YARA Forge package.
+2. **Compile it** with `yara_x.Compiler()` with `ignore_invalid_rules(True)`, the way clients do, and log `compiler.ignored_rules()`. Optionally drop the ignored rules so clients don't compile them on every scan.
+3. Move the hack tool rules (see above) into `menoa-tools.yar`, or drop them.
+4. Write `menoa.yar` with a header comment (`// Built <time> from YARA Forge core <release>`).
+5. **Sanity check:** refuse to publish if the rule count is 0 or has fallen by more than half since the last publish. Also scan known-clean folders (e.g. `/usr/bin` on the build server) with the compiled rules, and refuse to publish on any hit.
+6. Gzip and upload like `main.txt` (`--acl-public`, `Content-Encoding: gzip`, `--mime-type=text/plain`).
+
+YARA Forge releases about weekly, so build weekly. A new release means every client downloads the whole file once, about 1.5 MB gzipped for core. Otherwise clients get a 304.
+
 ## Still open
 
 - **Clients don't refresh on their own.** `feed_update_delay` is unused and nothing runs `menoa network reload` on a schedule. Until the background clock (README roadmap) exists, clients only see a new `main.txt` when they reload by hand.
 - **Ranges.** Decide whether the client should support CIDR, for Spamhaus DROP.
+- **YARA in the default config.** Once `menoa.yar` is published, add a `[yara_feeds.menoa]` entry to the default config so new installs get it (existing installs would need `menoa yara add`). Publish first: `menoa init` and `menoa yara reload` download every YARA feed and report an error if one is missing on the server. Until a YARA feed exists, combined scans (`menoa scan`, the GUI's main buttons) run ClamAV alone and say so.

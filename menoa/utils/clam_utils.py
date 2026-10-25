@@ -14,7 +14,8 @@ def is_clamscan_available() -> bool:
     """Check if clamscan is installed and available in PATH."""
     return shutil.which("clamscan") is not None
 
-CLEAN_RESULTS = ("OK", "Empty file", "Symbolic link", "Excluded")
+# The last two are YARA-X's, see yara_utils (clamscan also passes over files over its size limit without a word)
+CLEAN_RESULTS = ("OK", "Empty file", "Symbolic link", "Excluded", "Not a regular file", "Too big to scan")
 
 def result_kind(file, result):
     """

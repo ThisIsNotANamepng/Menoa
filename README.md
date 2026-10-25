@@ -6,10 +6,12 @@ Menoa is a modern, scriptable security tool designed solely for Linux. Its goal 
 
 ## Utilities
 
-It is made up of five main tools,
+It is made up of six main tools,
 
 - ClamAV-powered Antivirus
     - Provides a CLI and GUI frontend for ClamAV, the most popular open source antivirus*
+- YARA Rule Scanning
+    - Scans files with YARA rules using [YARA-X](https://virustotal.github.io/yara-x/), which supports the whole YARA language (ClamAV's own YARA support skips modules like `elf` and `pe`). Runs on its own (`menoa yara scan`) or together with ClamAV (`menoa scan`, and the main buttons on the GUI's Malware Scanning page). Add rule feeds with `menoa yara add --index myrules --name "My rules" --description "..." --url https://example.org/rules.yar`, or `--local-path` for a rule file of your own
 - Network Connection Endpoint scanning
     - Compares outgoing IP address connections against lists of known malicious endpoints*
 - Machine Learning Driven Process Classification (beta)
@@ -100,7 +102,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 
 ### Small changes:
 
-- [ ] Resolve local ip addresses connected to by processes and compare to urls distrubuted in threat feeds
+- [ ] Resolve local ip addresses connected to by processes and compare to urls distributed in threat feeds
 - [ ] Find a better threat feed for urls, I think they can be smaller and more specific to these needs, also I think this feeds might only be for malware distribution and not contain things like c&c servers (https://urlhaus.abuse.ch/api/#csv)
 - [x] Should network monitoring include ipv6? Right now it doesn't
 - [x] When clamav scanning is running, the progress % text line should be in the middle of the circle

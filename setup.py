@@ -56,7 +56,8 @@ setup(
         "tqdm==4.67.1",
         "typing_extensions==4.14.1",
         "tzdata==2025.2",
-        "urllib3==2.5.0"
+        "urllib3==2.5.0",
+        "yara-x==1.22.0"
     ],
     package_data={
         "menoa": [

@@ -1,61 +1,87 @@
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog, QMessageBox
-from PySide6.QtCore import Qt, QSize, QObject, Signal, Slot, QThread
+from PySide6.QtCore import Qt, QSize, QRect, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
-import sys, os
+import sys, os, time
 
 from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned, database_freshness, update_all_feeds
+import menoa.utils.yara_utils as yara_utils
 from menoa.pages.progress_dialog import run_with_progress
 
+ENGINES = {"clam": "ClamAV", "yara": "YARA"}
+
 class Scanner(QObject):
+    """
+    Scans paths with one engine, "clam" or "yara". A scan with both runs two Scanners side by side
+    """
     progress = Signal(int)
     finished = Signal()
     status = Signal(str)  # Final result text, emitted after finished so it isn't overwritten by finished's handlers
     log = Signal(str)
 
-    def set_scan_path(self, path):
-        self.scan_path = path
+    def __init__(self, engine="clam"):
+        super().__init__()
+        self.engine = engine
+
+    def set_scan_path(self, *paths):
+        # Quick scans check several folders one after another
+        self.scan_paths = paths
 
     @Slot()
     def scan(self):
-        total_files = max(get_scan_total(self.scan_path), 1)
+        clam = self.engine == "clam"
+        name = ENGINES[self.engine]
+        stream = scan_path_streaming if clam else yara_utils.scan_path_streaming
+        count = get_scan_total if clam else yara_utils.count_files
+        label = "" if clam else "YARA: "  # ClamAV's lines look like they always have
         scanned_files = last_value = 0
+        last_count = 0.0
         infected = problems = 0
 
         stages = []
 
         def on_progress(stage, done, total):
-            # Before any file is scanned clamscan loads and compiles its signatures, which takes seconds
+            # Before any file is scanned clamscan loads and compiles its signatures and YARA-X compiles its rules, which takes seconds
             if stage not in stages:
                 stages.append(stage)
                 self.log.emit(f"{stage}...")
             self.status.emit(f"{stage}: {min(done / total, 1):.0%}" if total else f"{stage}...")
 
         def on_summary(summary):
-            self.log.emit(f"Scanned {summary.get('Scanned files', '?')} files ({summary.get('Data scanned', '?')}) with "
-                          f"{int(summary.get('Known viruses', 0)):,} signatures in {summary.get('Time', '?').split(' (')[0]}")
+            rules = f"{int(summary.get('Known viruses', 0)):,} signatures" if clam else f"{int(summary.get('YARA rules', 0)):,} YARA rules"
+            data = f" ({summary['Data scanned']})" if "Data scanned" in summary else ""
+            self.log.emit(f"{name}: scanned {summary.get('Scanned files', '?')} files{data} with {rules} in {summary.get('Time', '?').split(' (')[0]}")
 
         try:
-            for file, result in scan_path_streaming(self.scan_path, on_progress, on_summary):
-                kind = result_kind(file, result)
-                infected += kind == "infected"
-                problems += kind == "error"
-                self.log.emit(f"{file} {result}" if file else result)
-                if not file:
-                    continue
+            total_files = max(sum(count(path) for path in self.scan_paths), 1)
+            for path in self.scan_paths:
+                for file, result in stream(path, on_progress, on_summary):
+                    kind = result_kind(file, result)
+                    infected += kind == "infected"
+                    problems += kind == "error"
+                    # YARA's clean files aren't logged, so a scan with both engines doesn't list every file twice
+                    if clam or kind != "clean":
+                        self.log.emit(f"{label}{file} {result}" if file else label + result)
+                    if not file:
+                        continue
 
-                scanned_files += 1
-                # Progress is in tenths of a percent, held below 100% until clamscan actually finishes
-                value = min(scanned_files * 1000 // total_files, 999)
-                if value != last_value:
-                    last_value = value
-                    self.progress.emit(value)
+                    scanned_files += 1
+                    # Progress is in tenths of a percent, held below 100% until the engine actually finishes
+                    value = min(scanned_files * 1000 // total_files, 999)
+                    if value != last_value:
+                        last_value = value
+                        self.progress.emit(value)
+                    # A big folder takes minutes to reach 0.1%, so the count shows it's moving (a few times a second, not per file)
+                    if time.monotonic() - last_count > 0.25:
+                        last_count = time.monotonic()
+                        self.status.emit(f"Scanned {scanned_files:,} of {total_files:,} files")
         except Exception as e:
-            self.log.emit(f"SCAN FAILED: {e}")
+            self.log.emit(f"{name} SCAN FAILED: {e}")
             self.finished.emit()
             self.status.emit("Scan failed, files were NOT checked (see log)")
             return
 
-        set_last_time_scanned()
+        if clam:
+            set_last_time_scanned()
         self.progress.emit(1000)
         self.finished.emit()
         summary = f"{infected} threat(s) found" if infected else "No threats found"
@@ -64,58 +90,66 @@ class Scanner(QObject):
         self.status.emit(f"Completed: {summary}")
 
 class CircularProgress(QWidget):
+    """
+    Two rings, ClamAV's progress inside and YARA's outside, each None when that engine isn't part of the scan
+    The middle shows the average of the engines that are scanning, and a check mark once they've all finished
+    """
+    COLORS = {"clam": QColor(76, 175, 80), "yara": QColor(214, 58, 196)}
+
     def __init__(self, parent=None, thickness=10):
         super().__init__(parent)
-        self._value = 0
-        self._min = 0
+        self._values = {"clam": None, "yara": None}  # None until a scan starts, so an idle circle shows no percentage
         self._max = 1000
         self._thickness = thickness
-        self.setMinimumSize(QSize(150, 150))
+        self.setMinimumSize(QSize(180, 180))
 
-    def setRange(self, minimum, maximum):
-        self._min, self._max = minimum, maximum
+    def start(self, engines):
+        # Clears the last scan's rings and check mark
+        self._values = {engine: 0 if engine in engines else None for engine in self._values}
         self.update()
 
-    def setValue(self, val):
-        self._value = val
+    def setValue(self, value, engine="clam"):
+        self._values[engine] = value
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(self._thickness, self._thickness,
-                                     -self._thickness, -self._thickness)
-        start_angle = 90 * 16
-        span_angle = -int(360 * 16 * (self._value - self._min) / (self._max - self._min))
+        t = self._thickness
+        side = min(self.width(), self.height())
+        outer = QRect((self.width() - side) // 2, (self.height() - side) // 2, side, side).adjusted(t, t, -t, -t)
+        inner = outer.adjusted(t * 2, t * 2, -t * 2, -t * 2)
 
-        pen_bg = QPen(QColor(200,200,200), self._thickness)
-        painter.setPen(pen_bg)
-        painter.drawEllipse(rect)
+        for engine, rect in (("yara", outer), ("clam", inner)):
+            painter.setPen(QPen(QColor(200, 200, 200), t))
+            painter.drawEllipse(rect)
+            if self._values[engine]:
+                painter.setPen(QPen(self.COLORS[engine], t))
+                painter.drawArc(rect, 90 * 16, -int(360 * 16 * self._values[engine] / self._max))
 
-        pen_fg = QPen(QColor(100,150,250), self._thickness)
-        painter.setPen(pen_fg)
-        painter.drawArc(rect, start_angle, span_angle)
-
-        if self._min < self._value < self._max:
-            font = painter.font()
-            font.setPixelSize(max(int(min(rect.width(), rect.height()) * 0.18), 10))
-            painter.setFont(font)
-            painter.setPen(self.palette().windowText().color())
-            painter.drawText(rect, Qt.AlignCenter, f"{100 * (self._value - self._min) / (self._max - self._min):.1f}%")
-
-        if self._value >= self._max:
-            pen_check = QPen(QColor(0,180,0), self._thickness)
+        running = [value for value in self._values.values() if value is not None]
+        if running and all(value >= self._max for value in running):
+            pen_check = QPen(QColor(0, 180, 0), t)
             pen_check.setCapStyle(Qt.RoundCap)
             painter.setPen(pen_check)
-            w,h = self.width(), self.height()
-            painter.drawLine(w*0.3, h*0.5, w*0.45, h*0.7)
-            painter.drawLine(w*0.45, h*0.7, w*0.75, h*0.3)
+            x, y, w, h = inner.x(), inner.y(), inner.width(), inner.height()
+            painter.drawLine(x + w * 0.25, y + h * 0.5, x + w * 0.43, y + h * 0.7)
+            painter.drawLine(x + w * 0.43, y + h * 0.7, x + w * 0.75, y + h * 0.3)
+        elif running:
+            font = painter.font()
+            font.setPixelSize(max(int(inner.width() * 0.2), 10))
+            painter.setFont(font)
+            painter.setPen(self.palette().windowText().color())
+            painter.drawText(inner, Qt.AlignCenter, f"{sum(running) / len(running) / 10:.1f}%")
         painter.end()
 
 class ClamPage(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Menoa - Antivirus")
+        self.setWindowTitle("Menoa - Malware Scanning")
+        self._scans = {}  # engine: (Scanner, QThread) of the latest scan
+        self._running = 0
+        self._statuses = {}
         self._setup_ui()
         self._load_db_info()
 
@@ -124,18 +158,17 @@ class ClamPage(QWidget):
             os.path.expanduser("~/Downloads"),
             os.path.expanduser("~/Documents")
         ]
-        self._quick_index = 0
 
     def _setup_ui(self):
-        # Progress circle
+        # Progress rings
         self.circular = CircularProgress(thickness=12)
-        self.circular.setRange(0, 1000)
-        top = QGroupBox("ClamAV Antivirus")
-        hl = QHBoxLayout()
-        hl.addStretch()
-        hl.addWidget(self.circular, alignment=Qt.AlignCenter)
-        hl.addStretch()
-        top.setLayout(hl)
+        legend = QLabel(" ".join(f'<span style="color: {CircularProgress.COLORS[e].name()};">&#9679;</span> {ENGINES[e]} ({ring})'
+                                 for e, ring in (("clam", "inner"), ("yara", "outer"))))
+        top = QGroupBox("Malware Scanning")
+        tl = QVBoxLayout()
+        tl.addWidget(self.circular, alignment=Qt.AlignCenter)
+        tl.addWidget(legend, alignment=Qt.AlignCenter)
+        top.setLayout(tl)
 
         # Status labels
         self.status1 = QLabel()
@@ -157,15 +190,21 @@ class ClamPage(QWidget):
         al.addWidget(update_button)
         age.setLayout(al)
 
-        # Buttons
+        # Buttons, the first row scans with both engines
         btns = QGroupBox()
-        bl = QHBoxLayout()
-        b1 = QPushButton("Quick Scan");   b1.clicked.connect(self.quick_scan)
-        b2 = QPushButton("Scan Folder");  b2.clicked.connect(self.scan_folder)
-        b3 = QPushButton("Scan File");    b3.clicked.connect(self.scan_file)
-        b4 = QPushButton("Full Scan");    b4.clicked.connect(self.full_scan)
-        for b in (b1, b2, b3, b4):
-            bl.addWidget(b)
+        bl = QVBoxLayout()
+        rows = [
+            [("Quick Scan", self.quick_scan), ("Scan Folder", self.scan_folder), ("Scan File", self.scan_file), ("Full Scan", self.full_scan)],
+            [("ClamAV: Scan Folder", lambda: self.scan_folder(("clam",))), ("ClamAV: Scan File", lambda: self.scan_file(("clam",))),
+             ("YARA: Scan Folder", lambda: self.scan_folder(("yara",))), ("YARA: Scan File", lambda: self.scan_file(("yara",)))],
+        ]
+        for row in rows:
+            rl = QHBoxLayout()
+            for text, handler in row:
+                b = QPushButton(text)
+                b.clicked.connect(lambda checked=False, handler=handler: handler())
+                rl.addWidget(b)
+            bl.addLayout(rl)
         btns.setLayout(bl)
 
         # Log
@@ -197,72 +236,99 @@ class ClamPage(QWidget):
 
     @Slot()
     def update_databases(self):
-        failures = run_with_progress(lambda progress: update_all_feeds(progress) or [], "Updating malware signatures...")
+        # YARA first, it returns its failures instead of raising, so a failed ClamAV update doesn't skip it
+        failures = run_with_progress(lambda progress: yara_utils.update_all_feeds() + (update_all_feeds(progress) or []), "Updating malware signatures...")
         if failures:
             QMessageBox.warning(self, "Menoa", "Updating the malware signatures failed:\n\n" + "\n".join(failures))
         self._load_db_info()
 
-    def _start_scan(self, path, scan_type="standard"):
-        """Helper to wire up a Scanner worker for a single path."""
-        if getattr(self, 'scan_thread', None) and self.scan_thread.isRunning():
+    def _start_scan(self, paths, engines=None):
+        """
+        Starts a Scanner per engine on its own thread. Without engines, both, or just ClamAV while there are no YARA feeds
+        """
+        # The threads, not _running: a thread is still stopping for a moment after its worker says it's finished
+        if any(thread.isRunning() for _, thread in self._scans.values()):
             return
+        if isinstance(paths, str):
+            paths = [paths]
+        if engines is None:
+            engines = ("clam", "yara") if yara_utils.list_feeds() else ("clam",)
+            if len(engines) == 1:
+                self.log_box.append("No YARA feeds, scanning with ClamAV only (add one with `menoa yara add`)")
 
-        self.log_box.append(f"Starting scan: {path}")
-        self.scan_worker = Scanner()
-        self.scan_worker.set_scan_path(path)
+        self.log_box.append(f"Starting {' and '.join(ENGINES[e] for e in engines)} scan: {', '.join(paths)}")
+        self._scans, self._statuses, self._running = {}, {}, len(engines)
+        self.circular.start(engines)
 
-        self.scan_thread = QThread()
-        self.scan_worker.moveToThread(self.scan_thread)
-        self.scan_thread.started.connect(self.scan_worker.scan)
+        for engine in engines:
+            worker = Scanner(engine)
+            worker.set_scan_path(*paths)
+            thread = QThread()
+            worker.moveToThread(thread)
+            thread.started.connect(worker.scan)
 
-        self.circular.setValue(0)  # Clears the last scan's check mark
-        self.scan_worker.progress.connect(self.circular.setValue)
-        self.scan_worker.progress.connect(self._show_progress)
-        self.scan_worker.log.connect(self.log_box.append)
+            # Bound methods of the page, so they run on the GUI thread
+            worker.progress.connect(self._clam_progress if engine == "clam" else self._yara_progress)
+            worker.status.connect(self._clam_status if engine == "clam" else self._yara_status)
+            worker.log.connect(self.log_box.append)
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(self._scan_finished)
 
-        self.scan_worker.finished.connect(self.scan_thread.quit)
-        self.scan_worker.finished.connect(self._load_db_info)  # Also updates "Last scan"
-        self.scan_worker.status.connect(self.status1.setText)
-
-        if scan_type == "quick":
-            # If it's a quick scan check if there are any more quick scan paths to scan
-            self.scan_worker.finished.connect(self._maybe_continue_quick)
-
-        self.scan_thread.start()
+            self._scans[engine] = (worker, thread)
+            thread.start()
 
     @Slot(int)
-    def _show_progress(self, value):
-        self.status1.setText("Scanning files...")  # The percentage is drawn in the circle
+    def _clam_progress(self, value):
+        self.circular.setValue(value, "clam")
 
-    def _maybe_continue_quick(self):
-        """If Quick Scan still has more paths, scan next."""
-        if self._quick_index < len(self._quick_paths) - 1:
-            self._quick_index += 1
-            next_path = self._quick_paths[self._quick_index]
-            self._start_scan(next_path, "quick")
+    @Slot(int)
+    def _yara_progress(self, value):
+        self.circular.setValue(value, "yara")
+
+    @Slot(str)
+    def _clam_status(self, text):
+        self._show_status("clam", text)
+
+    @Slot(str)
+    def _yara_status(self, text):
+        self._show_status("yara", text)
+
+    def _show_status(self, engine, text):
+        self._statuses[engine] = text
+        if len(self._scans) == 1:
+            self.status1.setText(text)
         else:
-            self._quick_index = 0
+            self.status1.setText("\n".join(f"{ENGINES[e]}: {self._statuses[e]}" for e in self._scans if e in self._statuses))
+
+    @Slot()
+    def _scan_finished(self):
+        self._running -= 1
+        if not self._running:
+            self._load_db_info()  # Also updates "Last scan"
 
     @Slot()
     def quick_scan(self):
-        self._quick_index = 0
-        self._start_scan(self._quick_paths[0], "quick")
+        paths = [path for path in self._quick_paths if os.path.exists(path)]
+        if not paths:
+            self.log_box.append("Nothing to quick scan: ~/Downloads and ~/Documents don't exist")
+            return
+        self._start_scan(paths)
 
     @Slot()
-    def scan_folder(self):
+    def scan_folder(self, engines=None):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
-            self._start_scan(folder)
+            self._start_scan(folder, engines)
 
     @Slot()
-    def scan_file(self):
+    def scan_file(self, engines=None):
         file, _ = QFileDialog.getOpenFileName(self, "Select File to Scan")
         if file:
-            self._start_scan(file)
+            self._start_scan(file, engines)
 
     @Slot()
     def full_scan(self):
-        self._start_scan("/", "deep")
+        self._start_scan("/")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

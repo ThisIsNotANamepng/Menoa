@@ -223,6 +223,13 @@ class DashboardPage(QWidget):
                 1, "clamav",
             ),
             (
+                "YARA Scanner",
+                "YARA rule scanner",
+                "Scans files and directories with YARA rules using YARA-X, together with ClamAV or on its own. Add rule feeds with `menoa yara add`.",
+                "https://github.com/ThisIsNotANamepng/Menoa/wiki/Tools#yara",
+                1, "yara",
+            ),
+            (
                 "Endpoint Scanner",
                 "Endpoint connection scanning",
                 "Compares active connections against known malicious endpoints.",
@@ -304,7 +311,7 @@ class MainWidget(QWidget):
         self.menu_widget.setObjectName("menuWidget")
         self.menu_widget.setSpacing(4)
 
-        menu_items = ["Dashboard", "Clam", "Network", "Process", "Attestation", "Command"]
+        menu_items = ["Dashboard", "Malware Scanning", "Network", "Process", "Attestation", "Command"]
 
         for title in menu_items:
             item = QListWidgetItem(title)

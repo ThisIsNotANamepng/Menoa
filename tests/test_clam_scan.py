@@ -29,6 +29,7 @@ ARGS_FILE = FAKE_BIN / "args"
 (FAKE_BIN / "clamscan").chmod(stat.S_IRWXU)
 os.environ["PATH"] = f"{FAKE_BIN}:{os.environ['PATH']}"
 
+import tomli
 from click.testing import CliRunner
 from menoa.utils import clam_utils
 from menoa.cli import cli
@@ -161,8 +162,8 @@ def test_gui_progress():
 def test_gui_updates_on_gui_thread():
     # The page's progress handler must run on the GUI thread, not the scan's worker thread
     import threading
-    from PySide6.QtWidgets import QApplication, QLabel
-    from menoa.pages.clam_page import ClamPage
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages.clam_page import ClamPage, CircularProgress
     app = QApplication.instance() or QApplication([])
 
     folder = Path(tempfile.mkdtemp())
@@ -170,23 +171,22 @@ def test_gui_updates_on_gui_thread():
         (folder / f"f{i}").write_text("x")
     fake("".join(f"{folder}/f{i}: OK\n" for i in range(4)) + SUMMARY.format(viruses=10), 0)
 
-    # Records which thread sets the progress text. The page itself isn't subclassed: PySide6 runs an override of a slot on the emitting thread
+    # Records which thread moves the progress circle. Not a QLabel: PySide6 runs a Python override of a Qt slot on the emitting thread
     threads = []
-    class RecordingLabel(QLabel):
-        def setText(self, text):
-            if text.startswith("Scanning"):
-                threads.append(threading.current_thread())
-            super().setText(text)
+    class RecordingCircle(CircularProgress):
+        def setValue(self, value, engine="clam"):
+            threads.append(threading.current_thread())
+            super().setValue(value, engine)
 
     page = ClamPage()
-    page.status1 = RecordingLabel()
+    page.circular = RecordingCircle()
     page._start_scan(str(folder))
     end = time.time() + 30
-    while time.time() < end and (page.scan_thread.isRunning() or not threads):
+    while time.time() < end and (page._running or not threads):
         app.processEvents()
         time.sleep(0.01)
     assert threads and all(t is threading.main_thread() for t in threads), threads
-    assert page.circular._value == 1000
+    assert page.circular._values == {"clam": 1000, "yara": None}  # No YARA feeds, so only ClamAV ran
 
 
 def test_clamscan_progress_and_summary():
@@ -219,7 +219,7 @@ def test_gui_log_shows_loading():
     scanner.status.connect(status.append)
     scanner.scan()
     assert log[:2] == ["Loading signatures...", "Compiling signatures..."], log
-    assert log[-1].startswith("Scanned 2 files (") and "with 10 signatures" in log[-1], log
+    assert log[-1].startswith("ClamAV: scanned 2 files with 10 signatures"), log
     assert "Loading signatures: 42%" in status and status[-1].startswith("Completed"), status
 
 
@@ -264,6 +264,116 @@ def test_custom_feeds_used():
 
     clam_utils.remove_feed("custom")
     server.shutdown()
+
+
+def make_yara_feeds():
+    # YARA-X supports modules (elf), uint32be and duplicate rule names across feeds, unlike ClamAV's YARA parser
+    from menoa.utils import yara_utils
+    rules = Path(tempfile.mkdtemp())
+    (rules / "one.yar").write_text('import "elf"\n'
+                                   'rule Marker { strings: $a = "menoa-yara-marker" condition: $a }\n'
+                                   'rule ElfMagic { condition: uint32be(0) == 0x7f454c46 and elf.number_of_sections > 0 }\n'
+                                   'rule Broken { condition: oops( }\n')  # Left out, the rest of the file still loads
+    (rules / "two.yara").write_text('rule Marker { strings: $a = "menoa-other-marker" condition: $a }\n')
+    yara_utils.add_feed("one", "One", "", "test", str(rules / "one.yar"))  # Local rule files, no url
+    yara_utils.add_feed("two", "Two", "", "test", str(rules / "two.yara"))
+    return rules
+
+
+def make_yara_folder():
+    import shutil
+    folder = Path(tempfile.mkdtemp())
+    (folder / "marked.txt").write_text("hello menoa-yara-marker")
+    (folder / "other.txt").write_text("menoa-other-marker")
+    (folder / "clean.txt").write_text("nothing here")
+    shutil.copy(os.path.realpath(sys.executable), folder / "program")
+    (folder / "link.txt").symlink_to(folder / "marked.txt")  # Checked where it's stored, not twice
+    os.mkfifo(folder / "pipe")  # Opening it would hang the scan
+    return folder
+
+
+def test_yara_tool():
+    import psutil
+    from menoa.utils import yara_utils
+
+    # No feeds: a YARA scan fails clearly, and the combined scan runs ClamAV alone instead of failing
+    folder = make_yara_folder()
+    fake(CLEAN, 0)
+    result = CliRunner().invoke(cli, ["yara", "scan", str(folder)])
+    assert result.exit_code == 2 and "No YARA rules" in result.output, result.output
+    result = CliRunner().invoke(cli, ["scan", "-q", str(folder)])
+    assert result.exit_code == 0 and "ClamAV only" in result.stderr, result.output
+
+    rules = make_yara_feeds()
+    assert sorted(yara_utils.list_feeds()) == ["one", "two"] and "clam_feeds" in tomli.loads((Path.home() / ".menoa" / "config.toml").read_text())
+    assert not any(feed.endswith((".yar", ".yara")) for feed in ARGS_FILE.read_text().splitlines())  # Never handed to clamscan
+
+    stages, summary = [], {}
+    items = list(yara_utils.scan_path_streaming(str(folder), lambda *e: stages.append(e[0]), summary.update))
+    results = dict(items)
+    assert results == {
+        str(folder / "marked.txt"): "YARA.Marker FOUND", str(folder / "other.txt"): "YARA.Marker FOUND",
+        str(folder / "program"): "YARA.ElfMagic FOUND", str(folder / "clean.txt"): "OK",
+        str(folder / "link.txt"): "Symbolic link", str(folder / "pipe"): "Not a regular file",
+    }, items
+    assert len(items) == yara_utils.count_files(str(folder))  # One result per file, so progress reaches the end
+    assert summary["YARA rules"] == "3" and summary["Scanned files"] == "4" and stages == ["Compiling YARA rules"], (summary, stages)
+
+    # A symlink given directly is scanned where it points, like clamscan does
+    (folder.parent / f"{folder.name}-link").symlink_to(folder / "marked.txt")
+    assert list(yara_utils.scan_path_streaming(str(folder.parent / f"{folder.name}-link"))) == [(str(folder / "marked.txt"), "YARA.Marker FOUND")]
+
+    # CLI: YARA alone, and both engines at once (ClamAV's fake output is clean, YARA finds the markers)
+    result = CliRunner().invoke(cli, ["yara", "scan", str(folder)])
+    assert result.exit_code == 1 and "with 3 YARA rules" in result.output and "marked.txt YARA.Marker FOUND" in result.output, result.output
+    result = CliRunner().invoke(cli, ["scan", "-q", str(folder)])
+    assert result.exit_code == 1 and "ClamAV: Scanned" in result.output and "YARA: Scanned" in result.output, result.output
+    result = CliRunner().invoke(cli, ["clam", "scan", "-q", str(folder)])
+    assert result.exit_code == 0 and "YARA" not in result.output, result.output
+    assert CliRunner().invoke(cli, ["scan", str(folder), "--full"]).exit_code == 2  # A path or --quick/--full, not both
+
+    # A feed that downloaded as an error page is reported, not silently scanned without
+    (rules / "two.yara").write_text("<html><body>404 Not Found</body></html>\n")
+    assert (None, f"No YARA rules could be loaded from {rules / 'two.yara'}") in list(yara_utils.scan_path_streaming(str(folder)))
+    (rules / "two.yara").write_text('rule Marker { strings: $a = "menoa-other-marker" condition: $a }\n')
+
+    # A caller that stops reading early (the GUI closing) doesn't leave YARA-X running
+    scan = yara_utils.scan_path_streaming(str(folder))
+    next(scan)
+    scan.close()
+    assert not [p for p in psutil.Process().children(recursive=True) if "menoa.utils.yara_utils" in " ".join(p.cmdline())]
+
+
+def test_gui_scans_with_both_engines():
+    import threading
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages.clam_page import ClamPage
+    app = QApplication.instance() or QApplication([])
+
+    folder = make_yara_folder()
+    fake("".join(f"{folder}/{name}: OK\n" for name in ("marked.txt", "other.txt", "clean.txt", "program")) + SUMMARY.format(viruses=10), 0)
+
+    def run(page, *args):
+        page._start_scan(str(folder), *args)
+        end = time.time() + 30
+        while time.time() < end and page._running:
+            app.processEvents()
+            time.sleep(0.01)
+        app.processEvents()  # The final status comes right after finished
+
+    page = ClamPage()
+    run(page)  # The main buttons use both engines once there are YARA feeds
+    assert page.circular._values == {"clam": 1000, "yara": 1000}, page.circular._values
+    log = page.log_box.toPlainText()
+    assert f"YARA: {folder}/marked.txt YARA.Marker FOUND" in log and f"YARA: {folder}/clean.txt" not in log, log
+    assert page.status1.text() == "ClamAV: Completed: No threats found\nYARA: Completed: 3 threat(s) found", page.status1.text()
+
+    run(page, ("yara",))  # YARA alone fills only the outer ring
+    assert page.circular._values == {"clam": None, "yara": 1000} and page.status1.text() == "Completed: 3 threat(s) found"
+
+    from menoa.utils import yara_utils
+    for index in list(yara_utils.list_feeds()):
+        yara_utils.remove_feed(index)
 
 
 def test_scans_use_menoa_databases():
@@ -429,6 +539,8 @@ def test_scans_skip_mounts():
 
 if __name__ == "__main__":
     test_custom_feeds_used()
+    test_yara_tool()
+    test_gui_scans_with_both_engines()
     test_good_scan_classification()
     test_failed_scans_raise()
     test_cli_exit_codes()
