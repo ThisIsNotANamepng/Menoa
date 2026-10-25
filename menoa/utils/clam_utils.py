@@ -53,13 +53,14 @@ def _terminal_lines(fd):
     if buffer:
         yield os.fsdecode(TERMINAL_ESCAPES.sub(b"", buffer))
 
-def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None, level=None):
+def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None, level=None, on_start=None):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
     on_progress(stage, done, total) is called while clamscan loads and compiles its signatures (stages in CLAMSCAN_STAGES),
     on_summary(summary) with clamscan's scan summary ({"Scanned files": "12", "Time": "5.3 sec (0 m 5 s)", ...})
     feeds and level pick which feeds to scan with, see utils.select_feeds(), every configured feed without them
+    on_start(process) is called with clamscan's Popen once it's running, so a stop button can kill it
 
     Raises an Exception once the scan ends if it couldn't actually check anything (no signatures loaded, clamscan crashed),
     so a failed scan is never mistaken for a clean one
@@ -104,6 +105,8 @@ def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None
         process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=terminal, stderr=terminal)
     finally:
         os.close(terminal)
+    if on_start:
+        on_start(process)
     messages = []
     summary = None
 
@@ -253,10 +256,11 @@ def exclude_regex(directory):
     # clamscan matches --exclude-dir as a POSIX regex against the full path, without a trailing slash
     return "^" + re.sub(r"([.\[\]{}()\\*+?^$|])", r"\\\1", directory) + "$"
 
-def get_scan_total(path, skip=None):
+def get_scan_total(path, skip=None, stop=None):
     """
     Counts the result lines clamscan will print for `path`, for progress bars:
     one per file and per symlink (it doesn't follow them), one per directory it can't open or skips (skipped_mounts), none for fifos or sockets
+    stop is a threading.Event that ends the count early, counting / takes about a minute
     """
 
     if not os.path.isdir(path):
@@ -270,10 +274,12 @@ def get_scan_total(path, skip=None):
     try:
         with os.scandir(path) as entries:
             for entry in entries:
+                if stop and stop.is_set():
+                    break
                 if entry.is_symlink() or entry.is_file(follow_symlinks=False) or entry.path in skip:
                     total += 1
                 elif entry.is_dir(follow_symlinks=False):
-                    total += get_scan_total(entry.path, skip)
+                    total += get_scan_total(entry.path, skip, stop)
     except OSError:
         return 1  # clamscan prints "Can't open directory." once for it
     return total

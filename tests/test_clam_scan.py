@@ -189,6 +189,49 @@ def test_gui_updates_on_gui_thread():
     assert page.circular._values == {"clam": 1000, "yara": None}  # No YARA feeds, so only ClamAV ran
 
 
+def test_gui_stop_scan():
+    import psutil
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages.clam_page import ClamPage
+    from menoa.utils.clam_utils import get_last_time_scanned
+    app = QApplication.instance() or QApplication([])
+
+    # A clamscan that finds one file and then hangs, like one busy with a huge file, so stopping has to kill it
+    folder = Path(tempfile.mkdtemp())
+    for i in range(2):
+        (folder / f"f{i}").write_text("x")
+    slow = Path(tempfile.mkdtemp())
+    (slow / "clamscan").write_text(f'#!/bin/sh\necho "{folder}/f0: OK"\nexec sleep 60\n')
+    (slow / "clamscan").chmod(stat.S_IRWXU)
+    path = os.environ["PATH"]
+    os.environ["PATH"] = f"{slow}:{path}"
+    try:
+        def engines_running():
+            return [p for p in psutil.Process().children(recursive=True) if "sleep" in p.name()]
+
+        last_scan = get_last_time_scanned()
+        for stop in ("stop_scan", "_stop_before_quit"):  # The button, and Menoa closing
+            page = ClamPage()
+            page._start_scan(str(folder), ("clam",))
+            end = time.time() + 30
+            while time.time() < end and f"{folder}/f0 OK" not in page.log_box.toPlainText():
+                app.processEvents()
+                time.sleep(0.01)
+            assert page.stop_button.isEnabled() and engines_running()
+            getattr(page, stop)()
+            while time.time() < end and page._running:
+                app.processEvents()
+                time.sleep(0.01)
+            app.processEvents()
+            assert page.status1.text() == "Stopped after 1 file(s)", page.status1.text()
+            assert "ClamAV scan stopped after 1 file(s)" in page.log_box.toPlainText() and "SCAN FAILED" not in page.log_box.toPlainText()
+            assert page.circular._values["clam"] < 1000 and not page.stop_button.isEnabled()
+            assert not engines_running()
+        assert get_last_time_scanned() == last_scan  # A stopped scan didn't check everything
+    finally:
+        os.environ["PATH"] = path
+
+
 def test_clamscan_progress_and_summary():
     fake(PROGRESS + CLEAN, 0)
     events, summaries = [], []
@@ -613,6 +656,7 @@ if __name__ == "__main__":
     test_scan_total_matches_clamscan_lines()
     test_gui_progress()
     test_gui_updates_on_gui_thread()
+    test_gui_stop_scan()
     test_clamscan_progress_and_summary()
     test_gui_log_shows_loading()
     test_scans_use_menoa_databases()

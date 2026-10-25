@@ -2,7 +2,8 @@ from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushB
                                QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidget, QListWidgetItem)
 from PySide6.QtCore import Qt, QSize, QRect, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
-import sys, os, time
+import sys, os, threading, time
+from contextlib import closing
 
 from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned, database_freshness, update_all_feeds
 import menoa.utils.yara_utils as yara_utils
@@ -25,6 +26,23 @@ class Scanner(QObject):
         super().__init__()
         self.engine = engine
         self.feeds, self.level = feeds, level  # Which feeds to scan with, see utils.select_feeds()
+        self._stop = threading.Event()
+        self._process = None
+
+    def stop(self):
+        # From the GUI thread. Killing the engine also ends a big file it's busy with, the scan loop sees the flag between results
+        self._stop.set()
+        if self._process:
+            self._process.kill()
+
+    def _started(self, process):
+        self._process = process
+        if self._stop.is_set():  # Stopped while it was starting, before stop() could see it
+            process.kill()
+
+    def _check_stop(self):
+        if self._stop.is_set():
+            raise InterruptedError
 
     def set_scan_path(self, *paths):
         # Quick scans check several folders one after another
@@ -45,6 +63,7 @@ class Scanner(QObject):
 
         def on_progress(stage, done, total):
             # Before any file is scanned clamscan loads and compiles its signatures and YARA-X compiles its rules, which takes seconds
+            self._check_stop()
             if stage not in stages:
                 stages.append(stage)
                 self.log.emit(f"{stage}...")
@@ -56,29 +75,39 @@ class Scanner(QObject):
             self.log.emit(f"{name}: scanned {summary.get('Scanned files', '?')} files{data} with {rules} in {summary.get('Time', '?').split(' (')[0]}")
 
         try:
-            total_files = max(sum(count(path) for path in self.scan_paths), 1)
+            total_files = max(sum(count(path, stop=self._stop) for path in self.scan_paths), 1)
+            self._check_stop()
             for path in self.scan_paths:
-                for file, result in stream(path, on_progress, on_summary, self.feeds, self.level):
-                    kind = result_kind(file, result)
-                    infected += kind == "infected"
-                    problems += kind == "error"
-                    # YARA's clean files aren't logged, so a scan with both engines doesn't list every file twice
-                    if clam or kind != "clean":
-                        self.log.emit(f"{label}{file} {result}" if file else label + result)
-                    if not file:
-                        continue
+                # closing: leaving the loop early (stopped) runs the stream's cleanup, which kills the engine
+                with closing(stream(path, on_progress, on_summary, self.feeds, self.level, on_start=self._started)) as results:
+                    for file, result in results:
+                        kind = result_kind(file, result)
+                        infected += kind == "infected"
+                        problems += kind == "error"
+                        # YARA's clean files aren't logged, so a scan with both engines doesn't list every file twice
+                        if clam or kind != "clean":
+                            self.log.emit(f"{label}{file} {result}" if file else label + result)
+                        self._check_stop()
+                        if not file:
+                            continue
 
-                    scanned_files += 1
-                    # Progress is in tenths of a percent, held below 100% until the engine actually finishes
-                    value = min(scanned_files * 1000 // total_files, 999)
-                    if value != last_value:
-                        last_value = value
-                        self.progress.emit(value)
-                    # A big folder takes minutes to reach 0.1%, so the count shows it's moving (a few times a second, not per file)
-                    if time.monotonic() - last_count > 0.25:
-                        last_count = time.monotonic()
-                        self.status.emit(f"Scanned {scanned_files:,} of {total_files:,} files")
+                        scanned_files += 1
+                        # Progress is in tenths of a percent, held below 100% until the engine actually finishes
+                        value = min(scanned_files * 1000 // total_files, 999)
+                        if value != last_value:
+                            last_value = value
+                            self.progress.emit(value)
+                        # A big folder takes minutes to reach 0.1%, so the count shows it's moving (a few times a second, not per file)
+                        if time.monotonic() - last_count > 0.25:
+                            last_count = time.monotonic()
+                            self.status.emit(f"Scanned {scanned_files:,} of {total_files:,} files")
         except Exception as e:
+            # Also the engine's own error once stop() killed it
+            if self._stop.is_set():
+                self.log.emit(f"{name} scan stopped after {scanned_files:,} file(s)")
+                self.finished.emit()
+                self.status.emit(f"Stopped after {scanned_files:,} file(s)" + (f", {infected} threat(s) found" if infected else ""))
+                return
             self.log.emit(f"{name} SCAN FAILED: {e}")
             self.finished.emit()
             self.status.emit("Scan failed, files were NOT checked (see log)")
@@ -182,6 +211,8 @@ class ClamPage(QWidget):
         self._chosen_feeds = None  # From "Choose feeds...", None for all of them
         self._setup_ui()
         self._load_db_info()
+        # Otherwise clamscan and YARA-X keep running after Menoa closes
+        QApplication.instance().aboutToQuit.connect(self._stop_before_quit)
 
         # Paths for quick scan
         self._quick_paths = [
@@ -231,6 +262,10 @@ class ClamPage(QWidget):
         fl.addWidget(QLabel("Scan with:"))
         fl.addWidget(self.feed_choice)
         fl.addWidget(self.feeds_used, stretch=1)
+        self.stop_button = QPushButton("Stop Scan")
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_scan)
+        fl.addWidget(self.stop_button)
 
         btns = QGroupBox()
         bl = QVBoxLayout()
@@ -366,6 +401,24 @@ class ClamPage(QWidget):
 
             self._scans[engine] = (worker, thread)
             thread.start()
+        self.stop_button.setEnabled(True)
+
+    @Slot()
+    def stop_scan(self):
+        running = [worker for worker, thread in self._scans.values() if thread.isRunning()]
+        if running:
+            self.log_box.append("Stopping scan...")
+        for worker in running:
+            worker.stop()
+        self.stop_button.setEnabled(False)
+
+    @Slot()
+    def _stop_before_quit(self):
+        self.stop_scan()
+        for _, thread in self._scans.values():
+            # The finished -> quit signal is queued to this thread, which is blocked here, so quit directly
+            thread.quit()
+            thread.wait()
 
     @Slot(int)
     def _clam_progress(self, value):
@@ -394,6 +447,7 @@ class ClamPage(QWidget):
     def _scan_finished(self):
         self._running -= 1
         if not self._running:
+            self.stop_button.setEnabled(False)
             self._load_db_info()  # Also updates "Last scan"
 
     @Slot()

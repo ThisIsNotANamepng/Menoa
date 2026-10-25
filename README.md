@@ -111,7 +111,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
 - [x] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
-- [ ] In GUI be able to stop a scan mid scan without having to close the window
+- [x] In GUI be able to stop a scan mid scan without having to close the window
 - [x] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa
 - [ ] Change the load template button on the command page be a button that pops up an input box for you to put a link to a bash file, it downloads and analyzes (meant for install.sh files)
 - [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better

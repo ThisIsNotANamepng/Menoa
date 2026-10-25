@@ -6,7 +6,7 @@ and a long string can make it skip the rest of a file)
 Scans run in their own process (python -m menoa.utils.yara_utils), like clamscan, so a crash on a malicious file stays out of Menoa
 """
 
-import os, stat, subprocess, sys, time
+import itertools, os, stat, subprocess, sys, time
 from datetime import datetime
 from pathlib import Path
 import tomli, tomli_w
@@ -137,11 +137,14 @@ def _files(path, skip, onerror=None):
         for name in files:
             yield os.path.join(root, name)
 
-def count_files(path):
+def count_files(path, stop=None):
     """
-    How many results a scan of path will have, for progress bars
+    How many results a scan of path will have, for progress bars. stop is a threading.Event that ends the count early
     """
-    return sum(1 for _ in _files(path, _skipped(path)))
+    files = _files(path, _skipped(path))
+    if stop:
+        files = itertools.takewhile(lambda _: not stop.is_set(), files)
+    return sum(1 for _ in files)
 
 def _records(stream):
     # Records are "file\0result\0", so any file name works, even one with a newline in it
@@ -154,12 +157,13 @@ def _records(stream):
             yield os.fsdecode(file), result.decode()
         fields = fields[paired:]
 
-def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, level=None):
+def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, level=None, on_start=None):
     """
     Generator that scans path with every downloaded YARA feed, like clam_utils.scan_path_streaming()
     Yields (file, result) for every file ("OK", "YARA.<rule> FOUND", or why it was skipped or couldn't be read), (None, message) for problems with the scan
     on_progress(stage, 0, 0) is called while the rules compile, on_summary({"Scanned files", "YARA rules", "Time"}) at the end
     feeds and level pick which feeds to scan with, see utils.select_feeds(), every configured feed without them
+    on_start(process) is called with YARA-X's Popen once it's running, so a stop button can kill it
 
     Raises an Exception if nothing could actually be checked (no rules, the scan crashed), so a failed scan is never mistaken for a clean one
     """
@@ -187,6 +191,8 @@ def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, lev
         [sys.executable, "-m", "menoa.utils.yara_utils", os.path.realpath(path), *rule_files, *[f"--skip={d}" for d in _skipped(path)]],
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
+    if on_start:
+        on_start(process)
     rules = scanned = 0
 
     try:
