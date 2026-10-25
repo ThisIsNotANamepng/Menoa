@@ -10,6 +10,7 @@ import menoa.utils.yara_utils as yara_utils
 from menoa.utils.clam_utils import list_feeds as clam_feeds
 from menoa.utils.utils import feeds_by_engine, FEED_LEVELS
 from menoa.pages.progress_dialog import run_with_progress
+from menoa import theme
 
 ENGINES = {"clam": "ClamAV", "yara": "YARA"}
 
@@ -127,7 +128,7 @@ class CircularProgress(QWidget):
     Two rings, ClamAV's progress inside and YARA's outside, each None when that engine isn't part of the scan
     The middle shows the average of the engines that are scanning, and a check mark once they've all finished
     """
-    COLORS = {"clam": QColor(76, 175, 80), "yara": QColor(214, 58, 196)}
+    COLORS = {"clam": QColor(theme.COLORS["accent"]), "yara": QColor(214, 58, 196)}
 
     def __init__(self, parent=None, thickness=10):
         super().__init__(parent)
@@ -154,7 +155,7 @@ class CircularProgress(QWidget):
         inner = outer.adjusted(t * 2, t * 2, -t * 2, -t * 2)
 
         for engine, rect in (("yara", outer), ("clam", inner)):
-            painter.setPen(QPen(QColor(200, 200, 200), t))
+            painter.setPen(QPen(QColor(theme.COLORS["border"]), t))
             painter.drawEllipse(rect)
             if self._values[engine]:
                 painter.setPen(QPen(self.COLORS[engine], t))
@@ -162,7 +163,7 @@ class CircularProgress(QWidget):
 
         running = [value for value in self._values.values() if value is not None]
         if running and all(value >= self._max for value in running):
-            pen_check = QPen(QColor(0, 180, 0), t)
+            pen_check = QPen(QColor(theme.COLORS["accent"]), t)
             pen_check.setCapStyle(Qt.RoundCap)
             painter.setPen(pen_check)
             x, y, w, h = inner.x(), inner.y(), inner.width(), inner.height()
@@ -303,13 +304,12 @@ class ClamPage(QWidget):
         self.status2.setText(f"Last scan: {get_last_time_scanned()}")
 
         state, text = database_freshness()
-        color = {"fresh": "#4CAF50", "outdated": "#FF9800"}.get(state, "#F44336")
         if state == "critical":
             text += ", scans will miss newer malware"
         elif state in ("missing", "unreadable"):
             text += ", scans can't run until they're downloaded"
         self.db_age.setText(text)
-        self.db_age.setStyleSheet(f"color: {color};")
+        self.db_age.setStyleSheet(f"color: {theme.freshness_color(state)};")
         self._show_feeds_used()
 
     def showEvent(self, event):

@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushBu
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QFontDatabase
 
+from menoa import theme
 from menoa.utils import network_utils
 from menoa.utils.network_utils import number_of_threats, get_interface_summary, get_feed_summary, missing_feeds
 from concurrent.futures import ProcessPoolExecutor
@@ -12,7 +13,7 @@ def format_connections(results):
     lines = [f"{'PID':>7}  {'Process':<20}  Remote address"]
     for r in results:
         line = html.escape(f"{r['pid'] or '-':>7}  {r['process'][:20]:<20}  {r['remote']}")
-        lines.append(f'<span style="color: #F44336; font-weight: bold;">{line}  MALICIOUS</span>' if r["malicious"] else line)
+        lines.append(f'<span style="color: {theme.COLORS["bad"]}; font-weight: bold;">{line}  MALICIOUS</span>' if r["malicious"] else line)
     return "<pre>" + "\n".join(lines) + "</pre>"
 
 class NetworkPage(QWidget):
@@ -85,9 +86,9 @@ class NetworkPage(QWidget):
         main_layout.addLayout(left_layout, 1)
         main_layout.addWidget(self.log_group, 2)  # Now wrapped in titled group box
 
-    def show_alert(self, text, color="#F44336"):
+    def show_alert(self, text, color=None):
         self.alert_label.setText(text)
-        self.alert_label.setStyleSheet(f"color: {color};")
+        self.alert_label.setStyleSheet(f"color: {color or theme.COLORS['bad']};")
         self.alert_label.setVisible(bool(text))
 
     def handle_refresh(self):
@@ -121,7 +122,7 @@ class NetworkPage(QWidget):
             try:
                 results = future.result()
             except Exception as e:
-                self.show_alert(f"Connections aren't being checked: {e}", "#FF9800")
+                self.show_alert(f"Connections aren't being checked: {e}", theme.COLORS["warning"])
                 self.log_box.setPlainText(str(e))
                 return
 
@@ -130,7 +131,7 @@ class NetworkPage(QWidget):
             if malicious:
                 self.show_alert(f"{malicious} malicious connection(s)!")
             elif missing:
-                self.show_alert(f"Not checked against {', '.join(missing)}, not downloaded (run `menoa network reload`)", "#FF9800")
+                self.show_alert(f"Not checked against {', '.join(missing)}, not downloaded (run `menoa network reload`)", theme.COLORS["warning"])
             else:
                 self.show_alert("")
             self.log_box.setHtml(format_connections(results))

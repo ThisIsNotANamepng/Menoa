@@ -114,7 +114,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [x] In GUI be able to stop a scan mid scan without having to close the window
 - [x] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa
 - [x] Change the load template button on the command page be a button that pops up an input box for you to put a link to a bash file, it downloads and analyzes (meant for install.sh files)
-- [ ] Make the dashboard, left column, and overall qss (including unified colors and icon) better
+- [x] Make the dashboard, left column, and overall qss (including unified colors and icon) better
 - [ ] Add comments, clean up code
 - [x] Right now the attestation get package version function only uses pacman, add more package managers
 - [x] Update the last_checked column in the attestation database

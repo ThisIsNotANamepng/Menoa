@@ -1,10 +1,11 @@
 import sys
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Signal, QObject, QThread, QEventLoop
 from PySide6.QtWidgets import QApplication, QWidget, QListWidget, QListWidgetItem, QHBoxLayout, QStackedWidget, QLabel, QVBoxLayout, QGridLayout, QFrame, QSizePolicy, QScrollArea, QToolButton, QDialog, QDialogButtonBox, QPushButton, QTextEdit, QProgressDialog, QMessageBox
-from PySide6.QtGui import QDesktopServices, QCursor, QFont, QLinearGradient, QColor, QBrush, QIcon, QPalette
+from PySide6.QtGui import QDesktopServices, QCursor, QFont, QLinearGradient, QColor, QBrush, QIcon, QPalette, QPixmap
 from PySide6.QtCore import QUrl, QEvent
-import importlib.resources as pkg_resources
 from pathlib import Path
+
+from menoa import theme
 
 
 from menoa.pages.network_page import NetworkPage
@@ -23,11 +24,6 @@ from menoa.pages.progress_dialog import run_with_progress
 
 from menoa.utils.utils import get_enabled_tools, ICON_PATH
 from menoa.utils.clam_utils import database_freshness, get_last_time_scanned
-
-
-# Fixed width for dashboard cards (pixels). Adjust this value if you change the
-# application minimum width or the number of columns in the grid.
-CARD_FIXED_WIDTH = 360
 
 
 class LearnMoreDialog(QDialog):
@@ -69,8 +65,6 @@ class DashboardCard(QFrame):
         # keep both short (dashboard) and long (popup) descriptions
         self.short_desc = short_desc
         self.long_desc = long_desc
-        # Make each card the same fixed width so the grid looks uniform
-        self.setFixedWidth(CARD_FIXED_WIDTH)
         self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
         self.setLineWidth(1)
         self.setObjectName("dashboardCard")
@@ -90,10 +84,9 @@ class DashboardCard(QFrame):
         title_label.setObjectName("dashboard_label")
 
         self.status_label = QLabel()
-        self.status_label.setAlignment(Qt.AlignCenter)
 
         title_layout.addWidget(title_label)
-        title_layout.addWidget(self.status_label)
+        title_layout.addWidget(self.status_label, 0, Qt.AlignLeft)
 
         header_layout.addLayout(title_layout)
         header_layout.addStretch()
@@ -106,6 +99,7 @@ class DashboardCard(QFrame):
 
         # show the short description on the dashboard card
         desc_label = QLabel(short_desc)
+        desc_label.setObjectName("cardDescription")
         desc_label.setWordWrap(True)
         desc_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -114,9 +108,6 @@ class DashboardCard(QFrame):
         learn_btn.setText("Learn more →")
         learn_btn.setObjectName("learnButton")
         learn_btn.setCursor(QCursor(Qt.PointingHandCursor))
-        learn_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        learn_btn.setIconSize(QSize(16, 16))
-        learn_btn.setIcon(QIcon.fromTheme("go-next"))
         # Open a native dialog with information instead of launching the browser
         learn_btn.clicked.connect(self.open_learn_dialog)
 
@@ -136,7 +127,8 @@ class DashboardCard(QFrame):
             return
         enabled = self.section in enabled_tools
         self.status_label.setText("Enabled" if enabled else "Disabled")
-        self.status_label.setStyleSheet(f"color: {'#4CAF50' if enabled else '#F44336'};")
+        color = theme.COLORS["good" if enabled else "bad"]
+        self.status_label.setStyleSheet(f"color: {color}; border: 1px solid {color}; border-radius: 9px; padding: 1px 8px; font-size: 12px;")
 
     def mousePressEvent(self, event):
         """Handle mouse click events for the entire card"""
@@ -163,7 +155,7 @@ class DashboardPage(QWidget):
         header = QWidget()
         header_layout = QHBoxLayout(header)
 
-        title = QLabel("Menoa Dashboard")
+        title = QLabel("Dashboard")
         title.setObjectName("dashboard_title")
 
         header_layout.addWidget(title)
@@ -171,21 +163,22 @@ class DashboardPage(QWidget):
 
         main_layout.addWidget(header)
 
-        # Stats bar
+        # Stats, a small card each
         stats_bar = QWidget()
-        stats_bar.setObjectName("statsBar")
         stats_layout = QHBoxLayout(stats_bar)
-        stats_layout.setContentsMargins(15, 12, 15, 12)
+        stats_layout.setContentsMargins(0, 0, 0, 0)
+        stats_layout.setSpacing(20)
 
         # Values are filled in by refresh()
         self.stat_values = {}
         for label in ("Active Tools", "Signatures", "Last Scan"):
-            stat = QWidget()
+            stat = QFrame()
+            stat.setObjectName("statCard")
             stat_layout = QVBoxLayout(stat)
+            stat_layout.setContentsMargins(15, 12, 15, 12)
 
             lbl = QLabel(label)
             lbl.setObjectName("dashboard_stats_label")
-            lbl.setStyleSheet("color: #777777;")
 
             val = QLabel()
             val.setObjectName("dashboard_stats_value")
@@ -193,8 +186,7 @@ class DashboardPage(QWidget):
 
             stat_layout.addWidget(lbl)
             stat_layout.addWidget(val)
-            stats_layout.addWidget(stat)
-            stats_layout.addSpacing(30)
+            stats_layout.addWidget(stat, 1)
 
         main_layout.addWidget(stats_bar)
 
@@ -210,9 +202,8 @@ class DashboardPage(QWidget):
         grid_layout.setHorizontalSpacing(20)
         grid_layout.setVerticalSpacing(20)
         grid_layout.setAlignment(Qt.AlignTop)
-
-        # Tools grid setup
-        scroll_area = QScrollArea()
+        for col in (0, 1):  # Cards share the width
+            grid_layout.setColumnStretch(col, 1)
 
         tools = [
             (
@@ -289,10 +280,9 @@ class DashboardPage(QWidget):
 
         state, text = database_freshness()
         values = {
-            "Active Tools": (str(len(enabled_tools)), "#00b57b"),
-            "Signatures": (text.removeprefix("Malware signatures are ") if state != "missing" else "Not downloaded",
-                           {"fresh": "#4CAF50", "outdated": "#FF9800"}.get(state, "#F44336")),
-            "Last Scan": (get_last_time_scanned(), "#00b57b"),
+            "Active Tools": (str(len(enabled_tools)), theme.COLORS["accent_text"]),
+            "Signatures": (text.removeprefix("Malware signatures are ") if state != "missing" else "Not downloaded", theme.freshness_color(state)),
+            "Last Scan": (get_last_time_scanned(), theme.COLORS["accent_text"]),
         }
         for label, (value, color) in values.items():
             self.stat_values[label].setText(value)
@@ -307,18 +297,32 @@ class MainWidget(QWidget):
 
         # Create menu
         self.menu_widget = QListWidget()
-        self.menu_widget.setFixedWidth(220)
         self.menu_widget.setObjectName("menuWidget")
-        self.menu_widget.setSpacing(4)
+        self.menu_widget.setSpacing(2)
 
         menu_items = ["Dashboard", "Malware Scanning", "Network", "Process", "Attestation", "Command"]
 
         for title in menu_items:
             item = QListWidgetItem(title)
-            item.setTextAlignment(Qt.AlignCenter)
-            item.setSizeHint(QSize(200, 50))
+            item.setSizeHint(QSize(200, 46))
 
             self.menu_widget.addItem(item)
+
+        # Left column: the logo and name above the menu
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setAttribute(Qt.WA_StyledBackground)  # Otherwise a plain QWidget ignores its stylesheet background
+        sidebar.setFixedWidth(220)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 20, 1, 10)  # 1px for its right border
+        logo = QLabel()
+        logo.setPixmap(QPixmap(str(ICON_PATH)).scaled(72, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        name = QLabel("Menoa")
+        name.setObjectName("sidebarName")
+        sidebar_layout.addWidget(logo)
+        sidebar_layout.addWidget(name)
+        sidebar_layout.addSpacing(15)
+        sidebar_layout.addWidget(self.menu_widget, 1)
 
         engine = PredictionEngine()
         self.dashboard_page = DashboardPage()
@@ -337,8 +341,8 @@ class MainWidget(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self.menu_widget, 1)
-        layout.addWidget(self.stack, 3)
+        layout.addWidget(sidebar)
+        layout.addWidget(self.stack, 1)
 
         self.setLayout(layout)
         self.menu_widget.setCurrentRow(0)
@@ -362,13 +366,7 @@ def main():
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(ICON_PATH)))  # Every window uses it
 
-    # Dark mode and light mode
-    if QApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
-        with pkg_resources.open_text("menoa", "dark_style.qss") as f:
-            app.setStyleSheet(f.read())
-    else:
-        with pkg_resources.open_text("menoa", "light_style.qss") as f:
-            app.setStyleSheet(f.read())
+    theme.apply(app)  # Dark or light, like the desktop
 
     if not (Path.home() / ".menoa" / "config.toml").exists():
         first_time_setup()

@@ -61,8 +61,7 @@ setup(
     ],
     package_data={
         "menoa": [
-            "dark_style.qss",
-            "light_style.qss",
+            "style.qss",
             "notification_icon.png",
             "models/*.xz",
             "utils/*.py",

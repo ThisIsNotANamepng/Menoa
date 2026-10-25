@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDouble
 from PySide6.QtCore import QTimer, QObject, QDateTime
 from PySide6.QtGui import QFont, QFontDatabase, QColor
 
+from menoa import theme
 from menoa.utils.process_utils import predict, get_process_threshold, set_process_threshold, get_model_version, get_model_settings, is_unsigned_model
 
 class PredictionEngine(QObject):
@@ -47,7 +48,7 @@ class ProcessPage(QWidget):
 
         # Someone who can edit config.toml could swap in their own model, so a model that isn't checked is always pointed out
         self.model_warning = QLabel()
-        self.model_warning.setStyleSheet("color: #FF9800;")
+        self.model_warning.setStyleSheet(f"color: {theme.COLORS['warning']};")
         self.model_warning.setWordWrap(True)
         try:
             settings = get_model_settings()
@@ -135,10 +136,10 @@ class ProcessPage(QWidget):
                 # Apply threat-based styling
                 threat_item = QTableWidgetItem(threat)
                 if "malicious" in threat.lower():
-                    threat_item.setForeground(QColor(220, 53, 69))
+                    threat_item.setForeground(QColor(theme.COLORS["bad"]))
                     threat_item.setFont(QFont("Arial", weight=QFont.Bold))
                 elif "suspicious" in threat.lower():
-                    threat_item.setForeground(QColor(255, 143, 0))
+                    threat_item.setForeground(QColor(theme.COLORS["warning"]))
 
                 self.table.setItem(row, 0, QTableWidgetItem(str(pid)))
                 self.table.setItem(row, 1, QTableWidgetItem(cmd))

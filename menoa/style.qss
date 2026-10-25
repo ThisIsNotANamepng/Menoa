@@ -1,0 +1,244 @@
+/* Filled in by theme.apply(), each $$color_name is a color from theme.PALETTES */
+
+QWidget {
+    background-color: $background;
+    color: $text;
+}
+
+QLabel {
+    color: $text;
+    background: transparent;
+    qproperty-alignment: AlignCenter;
+}
+
+/* Left column */
+
+#sidebar {
+    background-color: $sidebar;
+    border-right: 1px solid $border;
+}
+
+#sidebarName {
+    font-size: 22px;
+    font-weight: bold;
+    color: $accent_text;
+}
+
+QListWidget#menuWidget {
+    background-color: $sidebar;
+    border: none;
+    outline: 0;
+}
+
+QListWidget#menuWidget::item {
+    height: 44px;
+    padding-left: 18px;
+    margin: 0 10px;
+    border-radius: 6px;
+    color: $text;
+}
+
+QListWidget#menuWidget::item:hover {
+    background-color: $surface;
+}
+
+QListWidget#menuWidget::item:selected {
+    background-color: $accent;
+    color: $on_accent;
+    font-weight: bold;
+}
+
+/* Controls */
+
+QPushButton {
+    color: $on_accent;
+    background-color: $accent;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    min-height: 32px;
+}
+
+QPushButton:hover {
+    background-color: $accent_hover;
+}
+
+QPushButton:pressed {
+    background-color: $accent_pressed;
+}
+
+QPushButton:disabled {
+    background-color: $accent_disabled;
+    color: $text_disabled;
+}
+
+/* Only line edits, styling a combo or spin box replaces its native arrows */
+QLineEdit {
+    background-color: $surface;
+    color: $text;
+    border: 1px solid $border;
+    border-radius: 4px;
+    padding: 3px 6px;
+    selection-background-color: $accent;
+    selection-color: $on_accent;
+}
+
+QLineEdit:focus {
+    border: 1px solid $accent;
+}
+
+QComboBox QAbstractItemView, QListWidget {
+    background-color: $surface;
+    color: $text;
+    border: 1px solid $border;
+    selection-background-color: $accent;
+    selection-color: $on_accent;
+}
+
+QGroupBox {
+    border: 1px solid $border;
+    border-radius: 8px;
+    margin-top: 1ex;
+    font-weight: bold;
+    padding: 5px;
+    background-color: $background;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px;
+    color: $accent_text;
+}
+
+QTextEdit {
+    background-color: $surface;
+    color: $text;
+    border: 1px solid $border;
+    border-radius: 6px;
+    padding: 4px;
+    selection-background-color: $accent;
+    selection-color: $on_accent;
+}
+
+QTableWidget {
+    background-color: $surface;
+    alternate-background-color: $background;
+    gridline-color: $border;
+    font-size: 14px;
+    border: 1px solid $border;
+    color: $text;
+}
+
+QHeaderView::section {
+    background-color: $accent;
+    color: $on_accent;
+    padding: 5px;
+    font-weight: bold;
+    border: none;
+}
+
+QTableWidget::item {
+    padding: 5px;
+    border: none;
+}
+
+QTableWidget::item:hover {
+    background-color: $background;
+}
+
+QTableWidget::item:selected {
+    background-color: $accent_light;
+    color: $on_accent;
+}
+
+QScrollBar:vertical {
+    border: none;
+    width: 12px;
+    margin: 0;
+    background: transparent;
+}
+
+QScrollBar::handle:vertical {
+    background: $border;
+    min-height: 20px;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: $border_hover;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QProgressBar {
+    background-color: $surface;
+    border: 1px solid $border;
+    border-radius: 4px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: $accent;
+    border-radius: 3px;
+}
+
+/* Dashboard */
+
+#dashboard_title {
+    font-size: 26px;
+    font-weight: bold;
+    qproperty-alignment: AlignLeft;
+}
+
+#statCard, #dashboardCard {
+    background-color: $surface;
+    border: 1px solid $border;
+    border-radius: 8px;
+}
+
+#dashboardCard QWidget {
+    background: transparent;
+}
+
+#dashboardCard:hover {
+    border: 1px solid $accent;
+}
+
+#dashboard_stats_label {
+    font-size: 13px;
+    color: $muted;
+}
+
+#dashboard_stats_value {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+#dashboard_label {
+    font-weight: bold;
+    font-size: 18px;
+    qproperty-alignment: AlignLeft;
+}
+
+#cardDescription {
+    color: $muted;
+    qproperty-alignment: AlignLeft;
+}
+
+#learnButton {
+    background: transparent;
+    border: none;
+    color: $accent_text;
+    font-weight: bold;
+    padding: 0;
+}
+
+#learnButton:hover {
+    text-decoration: underline;
+}
