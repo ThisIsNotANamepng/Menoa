@@ -413,6 +413,19 @@ def test_gui_scans_with_both_engines():
     run(page, ("yara",))  # YARA alone fills only the outer ring
     assert page.circular._values == {"clam": None, "yara": 1000} and page.status1.text() == "Completed: 3 threat(s) found"
 
+    # The Quick/Folder/File/Full buttons scan with the engines picked in "Scan with"
+    page._quick_paths = [str(folder)]
+    for choice, values in (("YARA only", {"clam": None, "yara": 1000}), ("ClamAV only", {"clam": 1000, "yara": None}),
+                           ("ClamAV and YARA", {"clam": 1000, "yara": 1000})):
+        page.engine_choice.setCurrentText(choice)
+        assert page.feeds_used.text().count(":") == len([v for v in values.values() if v]), page.feeds_used.text()  # One line per engine
+        page.quick_scan()
+        end = time.time() + 30
+        while time.time() < end and page._running:
+            app.processEvents()
+            time.sleep(0.01)
+        assert page.circular._values == values, (choice, page.circular._values)
+
     from menoa.utils import yara_utils
     for index in list(yara_utils.list_feeds()):
         yara_utils.remove_feed(index)

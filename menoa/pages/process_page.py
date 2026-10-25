@@ -54,21 +54,14 @@ class ProcessPage(QWidget):
         # Top row widgets
         top_layout = QHBoxLayout()
 
-        # Filled in by _load_model() once the window is open, loading the model takes over a second
-        self.version_label = QLabel("Model version: loading...")
+        # Filled in by reload_model() once the window is open, loading the model takes over a second
+        self.version_label = QLabel()
         top_layout.addWidget(self.version_label)
 
         # Someone who can edit config.toml could swap in their own model, so a model that isn't checked is always pointed out
         self.model_warning = QLabel()
         self.model_warning.setStyleSheet(f"color: {theme.COLORS['warning']};")
         self.model_warning.setWordWrap(True)
-        try:
-            settings = get_model_settings()
-            if is_unsigned_model(settings):
-                self.model_warning.setText(f"Using your own unsigned model: {settings['model_url']}")
-        except Exception:
-            pass
-        self.model_warning.setVisible(bool(self.model_warning.text()))
 
         # Threshold input
         ## Need to incorporate this into scans and probably save it in a config somewhere so it can be used in background scans too
@@ -83,7 +76,6 @@ class ProcessPage(QWidget):
         # Scan button
         ## Right now this runs a scan but doesn't write those results to the table, need to hook that in
         self.scan_button = QPushButton("Scan")
-        self.scan_button.setEnabled(False)  # Until the model is loaded, so a first run doesn't install it twice at once
         self.scan_button.clicked.connect(self.on_scan)
         top_layout.addWidget(self.scan_button)
 
@@ -124,6 +116,21 @@ class ProcessPage(QWidget):
         self.populate_table()
 
         self.model_loaded.connect(self._show_model)  # A bound method, so it runs on the GUI thread
+        self.reload_model()
+
+    def reload_model(self) -> None:
+        """
+        Loads the model in the background and shows its version, and warns if it's an unsigned model. Called again when Settings changes the model
+        """
+        try:
+            settings = get_model_settings()
+            self.model_warning.setText(f"Using your own unsigned model: {settings['model_url']}" if is_unsigned_model(settings) else "")
+        except Exception:
+            self.model_warning.setText("")
+        self.model_warning.setVisible(bool(self.model_warning.text()))
+
+        self.version_label.setText("Model version: loading...")
+        self.scan_button.setEnabled(False)  # Until the model is loaded, so a first run doesn't install it twice at once
         threading.Thread(target=self._load_model, daemon=True).start()
 
     def _load_model(self) -> None:

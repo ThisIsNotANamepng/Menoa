@@ -16,6 +16,7 @@ from menoa.pages.clam_page import ClamPage
 from menoa.pages.attestation_page import AttestationPage
 from menoa.pages.process_page import ProcessPage, PredictionEngine
 from menoa.pages.script_page import ScriptPage
+from menoa.pages.settings_page import SettingsPage
 from menoa.pages.progress_dialog import run_with_progress
 from menoa.utils.utils import get_enabled_tools, ICON_PATH
 from menoa.utils.clam_utils import database_freshness, get_last_time_scanned
@@ -320,7 +321,7 @@ class MainWidget(QWidget):
         self.menu_widget.setObjectName("menuWidget")
         self.menu_widget.setSpacing(2)
 
-        menu_items = ["Dashboard", "Malware Scanning", "Network", "Process", "Attestation", "Command"]
+        menu_items = ["Dashboard", "Malware Scanning", "Network", "Process", "Attestation", "Command", "Settings"]
 
         for title in menu_items:
             item = QListWidgetItem(title)
@@ -350,9 +351,13 @@ class MainWidget(QWidget):
         self.stack.addWidget(self.dashboard_page)
         self.stack.addWidget(ClamPage())
         self.stack.addWidget(NetworkPage())
-        self.stack.addWidget(ProcessPage(engine))
+        process_page = ProcessPage(engine)
+        self.stack.addWidget(process_page)
         self.stack.addWidget(AttestationPage())
         self.stack.addWidget(ScriptPage())
+        settings_page = SettingsPage()
+        settings_page.model_changed.connect(process_page.reload_model)
+        self.stack.addWidget(settings_page)
 
         self.menu_widget.currentRowChanged.connect(self.display_page)
         self.dashboard_page.pageRequested.connect(self.display_page)

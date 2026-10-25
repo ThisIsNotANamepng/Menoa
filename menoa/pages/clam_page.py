@@ -19,6 +19,8 @@ from menoa.pages.progress_dialog import run_with_progress
 from menoa import theme
 
 ENGINES = {"clam": "ClamAV", "yara": "YARA"}
+# The "Scan with" engine choices, None is both (or ClamAV alone while there are no YARA feeds)
+ENGINE_CHOICES = {"ClamAV and YARA": None, "ClamAV only": ("clam",), "YARA only": ("yara",)}
 
 class Scanner(QObject):
     """
@@ -289,7 +291,10 @@ class ClamPage(QWidget):
         al.addWidget(update_button)
         age.setLayout(al)
 
-        # Which feeds scans use, and the buttons, the first row scans with both engines
+        # Which engines and feeds scans use, and the buttons, which scan with them
+        self.engine_choice = QComboBox()
+        self.engine_choice.addItems(list(ENGINE_CHOICES))
+        self.engine_choice.currentIndexChanged.connect(self._show_feeds_used)
         self.feed_choice = QComboBox()
         self.feed_choice.addItems(["All feeds"] + [f"{level.title()} level feeds" for level in FEED_LEVELS] + ["Choose feeds..."])
         self.feed_choice.activated.connect(self._feed_choice_changed)
@@ -298,6 +303,7 @@ class ClamPage(QWidget):
         self.feeds_used.setWordWrap(True)
         fl = QHBoxLayout()
         fl.addWidget(QLabel("Scan with:"))
+        fl.addWidget(self.engine_choice)
         fl.addWidget(self.feed_choice)
         fl.addWidget(self.feeds_used, stretch=1)
         self.stop_button = QPushButton("Stop Scan")
@@ -308,18 +314,12 @@ class ClamPage(QWidget):
         btns = QGroupBox()
         bl = QVBoxLayout()
         bl.addLayout(fl)
-        rows = [
-            [("Quick Scan", self.quick_scan), ("Scan Folder", self.scan_folder), ("Scan File", self.scan_file), ("Full Scan", self.full_scan)],
-            [("ClamAV: Scan Folder", lambda: self.scan_folder(("clam",))), ("ClamAV: Scan File", lambda: self.scan_file(("clam",))),
-             ("YARA: Scan Folder", lambda: self.scan_folder(("yara",))), ("YARA: Scan File", lambda: self.scan_file(("yara",)))],
-        ]
-        for row in rows:
-            rl = QHBoxLayout()
-            for text, handler in row:
-                b = QPushButton(text)
-                b.clicked.connect(lambda checked=False, handler=handler: handler())
-                rl.addWidget(b)
-            bl.addLayout(rl)
+        rl = QHBoxLayout()
+        for text, handler in (("Quick Scan", self.quick_scan), ("Scan Folder", self.scan_folder), ("Scan File", self.scan_file), ("Full Scan", self.full_scan)):
+            b = QPushButton(text)
+            b.clicked.connect(lambda checked=False, handler=handler: handler())
+            rl.addWidget(b)
+        bl.addLayout(rl)
         btns.setLayout(bl)
 
         # Log
@@ -368,6 +368,12 @@ class ClamPage(QWidget):
             return self._chosen_feeds or [], None
         return (), FEED_LEVELS[choice - 1] if choice else None
 
+    def _chosen_engines(self) -> Optional[Tuple[str, ...]]:
+        """
+        Returns the engines picked in "Scan with", None for both
+        """
+        return ENGINE_CHOICES[self.engine_choice.currentText()]
+
     def _feeds_used(self, engines: Sequence[str]) -> Dict[str, List[str]]:
         """
         Returns the feeds each engine would scan with, {engine: [feed names]}, leaving out engines with none
@@ -382,7 +388,7 @@ class ClamPage(QWidget):
         Shows which feeds scans use next to the "Scan with" choice
         """
         try:
-            used = self._feeds_used(("clam", "yara"))
+            used = self._feeds_used(self._chosen_engines() or ("clam", "yara"))
             self.feeds_used.setText("\n".join(f"{ENGINES[e]}: {', '.join(names)}" for e, names in used.items()) or "No feeds selected")
         except Exception as e:  # A chosen feed was removed from the config
             self.feeds_used.setText(str(e))
@@ -533,38 +539,38 @@ class ClamPage(QWidget):
     @Slot()
     def quick_scan(self) -> None:
         """
-        Scans ~/Downloads and ~/Documents with both engines
+        Scans ~/Downloads and ~/Documents with the engines picked in "Scan with"
         """
         paths = [path for path in self._quick_paths if os.path.exists(path)]
         if not paths:
             self.log_box.append("Nothing to quick scan: ~/Downloads and ~/Documents don't exist")
             return
-        self._start_scan(paths)
+        self._start_scan(paths, self._chosen_engines())
 
     @Slot()
-    def scan_folder(self, engines: Optional[Sequence[str]] = None) -> None:
+    def scan_folder(self) -> None:
         """
-        Asks for a folder and scans it, with both engines unless engines is given
+        Asks for a folder and scans it with the engines picked in "Scan with"
         """
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
-            self._start_scan(folder, engines)
+            self._start_scan(folder, self._chosen_engines())
 
     @Slot()
-    def scan_file(self, engines: Optional[Sequence[str]] = None) -> None:
+    def scan_file(self) -> None:
         """
-        Asks for a file and scans it, with both engines unless engines is given
+        Asks for a file and scans it with the engines picked in "Scan with"
         """
         file, _ = QFileDialog.getOpenFileName(self, "Select File to Scan")
         if file:
-            self._start_scan(file, engines)
+            self._start_scan(file, self._chosen_engines())
 
     @Slot()
     def full_scan(self) -> None:
         """
-        Scans the whole system from / with both engines
+        Scans the whole system from / with the engines picked in "Scan with"
         """
-        self._start_scan("/")
+        self._start_scan("/", self._chosen_engines())
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

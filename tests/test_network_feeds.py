@@ -182,6 +182,18 @@ def test_network_page():
 
     finish(error=Exception("No network feeds are downloaded"))
     assert "aren't being checked" in page.alert_label.text() and not page.alert_label.isHidden()
+
+    # Update feeds downloads them like `menoa network reload`, and says which failed
+    from PySide6.QtWidgets import QMessageBox
+    source = Path(tempfile.mkdtemp()) / "main.txt"
+    source.write_text("198.51.100.66\n198.51.100.67\n")
+    (Path.home() / ".menoa" / "config.toml").write_text(f'[network_feeds.main]\nformat = "plain"\nurl = "{source}"\n')
+    with mock.patch.object(QMessageBox, "warning") as warning:
+        page.update_button.click()
+    assert not warning.called and page.status_label.text() == "2 Threats Tracked", page.status_label.text()
+    with mock.patch.object(nu, "update_all_feeds", lambda: ["main: server down"]), mock.patch.object(QMessageBox, "warning") as warning:
+        page.update_button.click()
+    assert "main: server down" in warning.call_args[0][2], warning.call_args
     page.executor.shutdown()
 
 

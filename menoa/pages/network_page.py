@@ -2,11 +2,12 @@
 The Network page: checks the machine's connections against the network feeds every second while it's open
 """
 
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QMessageBox
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QCloseEvent, QFont
 
 from menoa import theme
+from menoa.pages.progress_dialog import run_with_progress
 from menoa.utils import network_utils
 from menoa.utils.network_utils import number_of_threats, get_interface_summary, get_feed_summary, missing_feeds
 from concurrent.futures import ProcessPoolExecutor
@@ -44,15 +45,19 @@ class NetworkPage(QWidget):
         self.alert_label.hide()
 
         self.refresh_button = QPushButton("↻ Refresh")
-        self.refresh_button.setMinimumWidth(100)
         self.refresh_button.clicked.connect(self.handle_refresh)
+        self.update_button = QPushButton("Update feeds")
+        self.update_button.clicked.connect(self.update_feeds)
 
         top_layout = QVBoxLayout()
         top_layout.setSpacing(12)
         top_layout.setContentsMargins(12, 24, 12, 12)
         top_layout.addWidget(self.status_label)
         top_layout.addWidget(self.alert_label)
-        top_layout.addWidget(self.refresh_button, 0)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.refresh_button, 1)
+        buttons.addWidget(self.update_button, 1)
+        top_layout.addLayout(buttons)
         self.top_box.setLayout(top_layout)
 
         # --- Bottom Left Box ---
@@ -113,6 +118,15 @@ class NetworkPage(QWidget):
         # Add visual feedback
         self.refresh_button.setText("✓ Refreshed")
         QTimer.singleShot(1000, lambda: self.refresh_button.setText("↻ Refresh"))
+
+    def update_feeds(self) -> None:
+        """
+        Downloads every network feed, like `menoa network reload`, and reports the ones that failed
+        """
+        failures = run_with_progress(lambda progress: network_utils.update_all_feeds(), "Updating network feeds...")
+        if failures:
+            QMessageBox.warning(self, "Menoa", "Updating these network feeds failed, their previous data is kept:\n\n" + "\n".join(failures))
+        self.handle_refresh()
 
     def update_logs(self) -> None:
         """

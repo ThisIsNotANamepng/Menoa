@@ -131,7 +131,8 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [x] Right now when the process scanning model or the attestation table isn't found it is automatically downloaded without user interact, should this stay like this?
 - [x] Running a clam scan, the progress circle fills up and progresss says 100% before scanning is complete (files: 153, nested files: 10027), could be an error in the counting of nested files for total files to scan for progress bar
 - [x] Make opening the gui faster
-- [ ] Across all tools, make all options available with the cli also available in the gui
+- [x] Across all tools, make all options available with the cli also available in the gui
+    - Still CLI only: adding, removing and listing feeds (see "Add feed management to the GUI"), reloading a single feed, `process keygen`/`sign` (for whoever publishes models) and `fix` (deletes ~/.menoa)
 - [x] Attestation versioning isn't working
 - [ ] Set up attestation api
 - [ ] Write more info for learn more buttons on the dashboard
