@@ -276,9 +276,47 @@ def test_unsigned_model_warning():
         with model_home(model_url="/models/own.pkl", threshold=0.5):
             page = process_page.ProcessPage(process_page.PredictionEngine())
             assert page.model_warning.text() == "Using your own unsigned model: /models/own.pkl" and not page.model_warning.isHidden()
+            wait_for_model(app, page)  # Its background load finishes while the patch is still on
         with model_home(threshold=0.5):
             page = process_page.ProcessPage(process_page.PredictionEngine())
             assert page.model_warning.text() == "" and page.model_warning.isHidden()
+            wait_for_model(app, page)
+
+
+def wait_for_model(app, page):
+    end = time.time() + 10
+    while time.time() < end and page.version_label.text().endswith("loading..."):
+        app.processEvents()
+        time.sleep(0.01)
+    app.processEvents()
+
+
+def test_gui_opens_without_waiting_for_the_model():
+    # Loading the real model takes over a second, the Process page loads it in the background instead of holding up the window
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from menoa.pages import process_page
+    app = QApplication.instance() or QApplication([])
+
+    def slow_version():
+        time.sleep(1)
+        return "slow"
+
+    with mock.patch.object(process_page, "get_model_version", slow_version), model_home(threshold=0.5):
+        start = time.time()
+        page = process_page.ProcessPage(process_page.PredictionEngine())
+        assert time.time() - start < 0.8, time.time() - start
+        assert page.version_label.text() == "Model version: loading..." and not page.scan_button.isEnabled()
+        wait_for_model(app, page)
+        assert page.version_label.text() == "Model version: slow" and page.scan_button.isEnabled()
+
+    def broken_version():
+        raise Exception("no model")
+
+    with mock.patch.object(process_page, "get_model_version", broken_version), model_home(threshold=0.5):
+        page = process_page.ProcessPage(process_page.PredictionEngine())
+        wait_for_model(app, page)
+        assert page.version_label.text() == "Model version: unavailable"
 
 
 def test_bundled_model_is_the_trained_model():
@@ -309,6 +347,7 @@ if __name__ == "__main__":
     test_cli_model()
     test_menoa_model_is_always_the_bundled_one()
     test_unsigned_model_warning()
+    test_gui_opens_without_waiting_for_the_model()
     test_bundled_model_is_the_trained_model()
     test_upgrade_replaces_the_old_model()
     print("All process scan checks passed")

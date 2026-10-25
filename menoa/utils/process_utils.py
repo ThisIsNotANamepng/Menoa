@@ -2,8 +2,6 @@
 The Process tool: classifies running processes as benign or malicious with a machine learning model, and checks that model before loading it
 """
 
-import pandas as pd
-import joblib
 import psutil
 import os
 import shutil
@@ -117,6 +115,8 @@ def load_model() -> Dict[str, Any]:
         # Left from an older Menoa release (or replaced on disk), extract this release's model again
         install_process_model(settings=settings)
 
+    import joblib  # Here and not at the top, loading pandas, joblib and scikit-learn takes over a second
+
     artifact = joblib.load(MODEL_PATH)
 
     if not isinstance(artifact, dict) or "model" not in artifact or "metadata" not in artifact:
@@ -219,6 +219,7 @@ def sign_model(model_path: str, private_key_path: str, version: Optional[str] = 
     The version defaults to the one inside the model (metadata.version), returns the version signed
     """
     if version is None:
+        import joblib
         version = str(joblib.load(model_path)["metadata"]["version"])
 
     with open(private_key_path) as f:
@@ -334,6 +335,7 @@ def predict(threshold: float = 0.75) -> Tuple[List[int], List[str], List[float]]
     if not rows:
         return ([], [], [])
 
+    import pandas as pd
     features = pd.DataFrame(rows).reindex(columns=artifact["metadata"]["feature_columns"])
     malicious_probabilities = model.predict_proba(features)[:, 1]
 

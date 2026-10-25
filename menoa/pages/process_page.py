@@ -2,11 +2,12 @@
 The Process page: lists running processes and classifies them with the process model
 """
 
+import threading
 import time
 import psutil
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
-from PySide6.QtCore import QTimer, QObject
+from PySide6.QtCore import QTimer, QObject, Signal, Slot
 from PySide6.QtGui import QFont, QColor
 
 from menoa import theme
@@ -42,6 +43,8 @@ class ProcessPage(QWidget):
     The model version and threshold, a scan button, and a table of running processes with their classification
     """
 
+    model_loaded = Signal(str)  # The model's version, or "unavailable"
+
     def __init__(self, engine: PredictionEngine) -> None:
         super().__init__()
         self.engine = engine
@@ -51,14 +54,8 @@ class ProcessPage(QWidget):
         # Top row widgets
         top_layout = QHBoxLayout()
 
-        # Model version label
-        # A missing model shouldn't stop the whole GUI from opening
-        try:
-            model_version = get_model_version()
-        except Exception as e:
-            print(f"Process model unavailable: {e}")
-            model_version = "unavailable"
-        self.version_label = QLabel(f"Model version: {model_version}")
+        # Filled in by _load_model() once the window is open, loading the model takes over a second
+        self.version_label = QLabel("Model version: loading...")
         top_layout.addWidget(self.version_label)
 
         # Someone who can edit config.toml could swap in their own model, so a model that isn't checked is always pointed out
@@ -86,6 +83,7 @@ class ProcessPage(QWidget):
         # Scan button
         ## Right now this runs a scan but doesn't write those results to the table, need to hook that in
         self.scan_button = QPushButton("Scan")
+        self.scan_button.setEnabled(False)  # Until the model is loaded, so a first run doesn't install it twice at once
         self.scan_button.clicked.connect(self.on_scan)
         top_layout.addWidget(self.scan_button)
 
@@ -124,6 +122,28 @@ class ProcessPage(QWidget):
 
         # Initial population
         self.populate_table()
+
+        self.model_loaded.connect(self._show_model)  # A bound method, so it runs on the GUI thread
+        threading.Thread(target=self._load_model, daemon=True).start()
+
+    def _load_model(self) -> None:
+        """
+        Loads the model on a background thread for its version, then emits model_loaded. A missing model shouldn't stop the GUI from opening
+        """
+        try:
+            version = str(get_model_version())
+        except Exception as e:
+            print(f"Process model unavailable: {e}")
+            version = "unavailable"
+        self.model_loaded.emit(version)
+
+    @Slot(str)
+    def _show_model(self, version: str) -> None:
+        """
+        Shows the model's version and enables scanning
+        """
+        self.version_label.setText(f"Model version: {version}")
+        self.scan_button.setEnabled(True)
 
     def on_scan(self) -> None:
         """
