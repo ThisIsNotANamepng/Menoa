@@ -53,12 +53,13 @@ def _terminal_lines(fd):
     if buffer:
         yield os.fsdecode(TERMINAL_ESCAPES.sub(b"", buffer))
 
-def scan_path_streaming(path: str, on_progress=None, on_summary=None):
+def scan_path_streaming(path: str, on_progress=None, on_summary=None, feeds=None, level=None):
     """
     Generator that streams clamscan output line-by-line.
     Yields (filename, result) for each file as it's scanned, and (None, message) for engine warnings/errors, see result_kind()
     on_progress(stage, done, total) is called while clamscan loads and compiles its signatures (stages in CLAMSCAN_STAGES),
     on_summary(summary) with clamscan's scan summary ({"Scanned files": "12", "Time": "5.3 sec (0 m 5 s)", ...})
+    feeds and level pick which feeds to scan with, see utils.select_feeds(), every configured feed without them
 
     Raises an Exception once the scan ends if it couldn't actually check anything (no signatures loaded, clamscan crashed),
     so a failed scan is never mistaken for a clean one
@@ -79,19 +80,19 @@ def scan_path_streaming(path: str, on_progress=None, on_summary=None):
         cmd.append("-r")
         cmd += [f"--exclude-dir={exclude_regex(mount)}" for mount in skipped_mounts(path)]
 
-    # Every scan type uses every configured database. A missing default stops the scan, without any -d clamscan would silently use the system database
+    # A missing default (or a feed asked for by name) stops the scan, without any -d clamscan would silently use the system database
     databases = []
-    for index, feed in list_feeds().items():
+    for index, feed in utils.select_feeds(list_feeds(), feeds, level).items():
         feed_path = os.path.expanduser(feed["local_path"])
         if os.path.exists(feed_path):
             databases += ["-d", feed_path]
-        elif index in DEFAULT_CLAM_FEEDS:
+        elif index in DEFAULT_CLAM_FEEDS or feeds:
             raise Exception(f"ClamAV database {feed_path} isn't downloaded, run `menoa clam reload`")
         else:
             yield (None, f"Custom feed {index} skipped, {feed_path} doesn't exist (run `menoa clam reload {index}`)")
 
     if not databases:
-        raise Exception("No ClamAV databases in ~/.menoa/config.toml")
+        raise Exception("No ClamAV databases to scan with" + (f" at level {level}" if level else ""))
     cmd += databases
 
     cmd.append(path)
@@ -391,7 +392,7 @@ def update_clamav_feed(progress=None):
 
     mark_refreshed(DEFAULT_CLAM_FEEDS)
 
-def add_feed(index, name, url, description, local_path, move_into_default_feed_path=True):
+def add_feed(index, name, url, description, local_path, move_into_default_feed_path=True, level=None):
     """
     Adds a clam feed from the config
     if `move_into_default_feed_path` is True Menoa will try to copy the given filepath into `~/.menoa/feeds/clam/xxxx``
@@ -418,6 +419,8 @@ def add_feed(index, name, url, description, local_path, move_into_default_feed_p
         "local_path": local_path,
         "last_refreshed": datetime(1970, 1, 1),
     }
+    if level:  # Without one it's quick, in every scan level (utils.select_feeds)
+        config["clam_feeds"][index]["level"] = level
 
     with open(str(Path.home())+"/.menoa/config.toml", "wb") as f:
         tomli_w.dump(config, f)

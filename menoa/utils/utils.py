@@ -271,6 +271,47 @@ def initialize_config(progress=None):
     return failures
 
 
+FEED_LEVELS = ("quick", "standard", "deep")
+
+def select_feeds(configured, feeds=None, level=None):
+    """
+    Picks which of the configured feeds ({index: feed}) a scan uses, returned the same way:
+    - feeds: exactly these, each a configured index or a path to a file that isn't in the config
+    - level: the feeds up to that level, they nest (quick feeds are in every level, deep feeds only in deep). A feed with no level is quick
+    - neither: every configured feed
+    """
+    if feeds:
+        picked = {}
+        for feed in feeds:
+            path = os.path.expanduser(feed)
+            if feed in configured:
+                picked[feed] = configured[feed]
+            elif os.path.isfile(path):
+                picked[feed] = {"local_path": os.path.abspath(path)}
+            else:
+                raise Exception(f"Unknown feed {feed}, use a configured feed ({', '.join(configured) or 'none'}) or a path to a file")
+        return picked
+    if level:
+        return {index: feed for index, feed in configured.items() if FEED_LEVELS.index(feed.get("level", "quick")) <= FEED_LEVELS.index(level)}
+    return dict(configured)
+
+def feeds_by_engine(engines, feeds=(), level=None):
+    """
+    Which feeds each engine ("clam", "yara") scans with, {engine: [feed names]}, see select_feeds(). Raises for an unknown feed
+    With several engines each of `feeds` goes to the engine it belongs to (a rule file path, .yar, to YARA), and an engine
+    none of them belong to is left out
+    """
+    import menoa.utils.clam_utils as clam_utils
+    import menoa.utils.yara_utils as yara_utils
+    configured = {"clam": clam_utils.list_feeds(), "yara": yara_utils.list_feeds()}
+
+    wanted = {engine: [] for engine in engines}
+    for feed in feeds:
+        is_yara = feed in configured["yara"] or (feed not in configured["clam"] and feed.endswith((".yar", ".yara")))
+        wanted[engines[0] if len(engines) == 1 else ("yara" if is_yara else "clam")].append(feed)
+
+    return {engine: list(select_feeds(configured[engine], wanted[engine], level)) for engine in engines if wanted[engine] or not feeds}
+
 def get_enabled_tools():
     """
     Returns the config sections of the tools which are enabled, like ["clamav", "network"]

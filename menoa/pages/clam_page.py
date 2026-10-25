@@ -1,10 +1,13 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog, QMessageBox
+from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QApplication, QSizePolicy, QFileDialog,
+                               QMessageBox, QComboBox, QDialog, QDialogButtonBox, QListWidget, QListWidgetItem)
 from PySide6.QtCore import Qt, QSize, QRect, QObject, Signal, Slot, QThread
 from PySide6.QtGui import QPainter, QPen, QColor
 import sys, os, time
 
 from menoa.utils.clam_utils import get_scan_total, scan_path_streaming, result_kind, get_last_time_scanned, get_database_version, set_last_time_scanned, database_freshness, update_all_feeds
 import menoa.utils.yara_utils as yara_utils
+from menoa.utils.clam_utils import list_feeds as clam_feeds
+from menoa.utils.utils import feeds_by_engine, FEED_LEVELS
 from menoa.pages.progress_dialog import run_with_progress
 
 ENGINES = {"clam": "ClamAV", "yara": "YARA"}
@@ -18,9 +21,10 @@ class Scanner(QObject):
     status = Signal(str)  # Final result text, emitted after finished so it isn't overwritten by finished's handlers
     log = Signal(str)
 
-    def __init__(self, engine="clam"):
+    def __init__(self, engine="clam", feeds=None, level=None):
         super().__init__()
         self.engine = engine
+        self.feeds, self.level = feeds, level  # Which feeds to scan with, see utils.select_feeds()
 
     def set_scan_path(self, *paths):
         # Quick scans check several folders one after another
@@ -54,7 +58,7 @@ class Scanner(QObject):
         try:
             total_files = max(sum(count(path) for path in self.scan_paths), 1)
             for path in self.scan_paths:
-                for file, result in stream(path, on_progress, on_summary):
+                for file, result in stream(path, on_progress, on_summary, self.feeds, self.level):
                     kind = result_kind(file, result)
                     infected += kind == "infected"
                     problems += kind == "error"
@@ -143,6 +147,31 @@ class CircularProgress(QWidget):
             painter.drawText(inner, Qt.AlignCenter, f"{sum(running) / len(running) / 10:.1f}%")
         painter.end()
 
+class FeedPicker(QDialog):
+    """
+    A checklist of every ClamAV and YARA feed, for scanning with just some of them
+    """
+
+    def __init__(self, checked, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose feeds")
+        self.list = QListWidget()
+        for engine, feeds in (("clam", clam_feeds()), ("yara", yara_utils.list_feeds())):
+            for index, feed in feeds.items():
+                item = QListWidgetItem(f"{index} ({ENGINES[engine]}, {feed.get('level', 'quick')})")
+                item.setData(Qt.UserRole, index)
+                item.setCheckState(Qt.Checked if checked is None or index in checked else Qt.Unchecked)
+                self.list.addItem(item)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.list)
+        layout.addWidget(buttons)
+
+    def checked(self):
+        return [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count()) if self.list.item(i).checkState() == Qt.Checked]
+
 class ClamPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -150,6 +179,7 @@ class ClamPage(QWidget):
         self._scans = {}  # engine: (Scanner, QThread) of the latest scan
         self._running = 0
         self._statuses = {}
+        self._chosen_feeds = None  # From "Choose feeds...", None for all of them
         self._setup_ui()
         self._load_db_info()
 
@@ -190,9 +220,21 @@ class ClamPage(QWidget):
         al.addWidget(update_button)
         age.setLayout(al)
 
-        # Buttons, the first row scans with both engines
+        # Which feeds scans use, and the buttons, the first row scans with both engines
+        self.feed_choice = QComboBox()
+        self.feed_choice.addItems(["All feeds"] + [f"{level.title()} level feeds" for level in FEED_LEVELS] + ["Choose feeds..."])
+        self.feed_choice.activated.connect(self._feed_choice_changed)
+        self._last_choice = 0
+        self.feeds_used = QLabel()
+        self.feeds_used.setWordWrap(True)
+        fl = QHBoxLayout()
+        fl.addWidget(QLabel("Scan with:"))
+        fl.addWidget(self.feed_choice)
+        fl.addWidget(self.feeds_used, stretch=1)
+
         btns = QGroupBox()
         bl = QVBoxLayout()
+        bl.addLayout(fl)
         rows = [
             [("Quick Scan", self.quick_scan), ("Scan Folder", self.scan_folder), ("Scan File", self.scan_file), ("Full Scan", self.full_scan)],
             [("ClamAV: Scan Folder", lambda: self.scan_folder(("clam",))), ("ClamAV: Scan File", lambda: self.scan_file(("clam",))),
@@ -233,6 +275,43 @@ class ClamPage(QWidget):
             text += ", scans can't run until they're downloaded"
         self.db_age.setText(text)
         self.db_age.setStyleSheet(f"color: {color};")
+        self._show_feeds_used()
+
+    def showEvent(self, event):
+        # Feeds can be added or removed from the CLI while Menoa is open
+        self._show_feeds_used()
+        super().showEvent(event)
+
+    def _feed_selection(self):
+        # (feeds, level) for utils.feeds_by_engine() from the feed picker
+        choice = self.feed_choice.currentIndex()
+        if choice == len(FEED_LEVELS) + 1:
+            return self._chosen_feeds or [], None
+        return (), FEED_LEVELS[choice - 1] if choice else None
+
+    def _feeds_used(self, engines):
+        feeds, level = self._feed_selection()
+        if feeds == []:  # Everything unticked in "Choose feeds...", an empty list would mean all of them
+            return {}
+        return {engine: names for engine, names in feeds_by_engine(engines, feeds, level).items() if names}
+
+    def _show_feeds_used(self):
+        try:
+            used = self._feeds_used(("clam", "yara"))
+            self.feeds_used.setText("\n".join(f"{ENGINES[e]}: {', '.join(names)}" for e, names in used.items()) or "No feeds selected")
+        except Exception as e:  # A chosen feed was removed from the config
+            self.feeds_used.setText(str(e))
+
+    @Slot(int)
+    def _feed_choice_changed(self, choice):
+        if choice == len(FEED_LEVELS) + 1:
+            picker = FeedPicker(self._chosen_feeds, self)
+            if picker.exec() != QDialog.Accepted:
+                self.feed_choice.setCurrentIndex(self._last_choice)
+                return
+            self._chosen_feeds = picker.checked()
+        self._last_choice = choice
+        self._show_feeds_used()
 
     @Slot()
     def update_databases(self):
@@ -251,17 +330,28 @@ class ClamPage(QWidget):
             return
         if isinstance(paths, str):
             paths = [paths]
-        if engines is None:
-            engines = ("clam", "yara") if yara_utils.list_feeds() else ("clam",)
-            if len(engines) == 1:
-                self.log_box.append("No YARA feeds, scanning with ClamAV only (add one with `menoa yara add`)")
+        both = engines is None
+        try:
+            used = self._feeds_used(("clam", "yara") if both else engines)
+        except Exception as e:
+            self.log_box.append(f"SCAN NOT STARTED: {e}")
+            return
+        if not used:
+            self.log_box.append(f"SCAN NOT STARTED: no {' or '.join(ENGINES[e] for e in (engines or ENGINES))} feeds selected")
+            return
+        if both and len(used) == 1:
+            self.log_box.append(f"No {ENGINES[({'clam', 'yara'} - set(used)).pop()]} feeds selected, scanning with {ENGINES[next(iter(used))]} only")
+        engines = tuple(used)
+        feeds, level = self._feed_selection()
 
         self.log_box.append(f"Starting {' and '.join(ENGINES[e] for e in engines)} scan: {', '.join(paths)}")
+        for engine in engines:
+            self.log_box.append(f"{ENGINES[engine]} feeds: {', '.join(used[engine])}")
         self._scans, self._statuses, self._running = {}, {}, len(engines)
         self.circular.start(engines)
 
         for engine in engines:
-            worker = Scanner(engine)
+            worker = Scanner(engine, used[engine] if feeds else None, level)
             worker.set_scan_path(*paths)
             thread = QThread()
             worker.moveToThread(thread)

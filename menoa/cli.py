@@ -54,7 +54,7 @@ Commands
 """
 
 import sys
-from menoa.utils.utils import initialize, rewrite
+from menoa.utils.utils import initialize, rewrite, feeds_by_engine, FEED_LEVELS
 import click
 from rich.console import Console
 from pathlib import Path
@@ -87,13 +87,47 @@ def clam():
 
 ENGINE_NAMES = {"clam": "ClamAV", "yara": "YARA"}
 
-def scan(path, quiet=False, engines=("clam",)):
+def feed_options(command):
+    # --feed and --level for every scan command
+    command = click.option('--level', type=click.Choice(FEED_LEVELS), help="Only feeds up to this level: quick feeds are in every level, deep feeds only in deep")(command)
+    return click.option('--feed', 'feeds', multiple=True, help="Only scan with this feed, a feed index or a path to a file. Repeat it for more")(command)
+
+def pick_feeds(engines, feeds, level):
+    """
+    Which feeds each engine scans with, {engine: [names]}. A scan with both engines leaves out one that ends up with no feeds
+    Exits 2 if a feed is unknown, or nothing is left to scan with
+    """
+    import menoa.utils.yara_utils as yara_utils
+
+    try:
+        picked = {engine: names for engine, names in feeds_by_engine(engines, feeds, level).items() if names}
+    except Exception as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(2)
+
+    if len(engines) > 1 and len(picked) == 1:
+        missing, running = [ENGINE_NAMES[e] for e in engines if e not in picked][0], ENGINE_NAMES[next(iter(picked))]
+        reason = " matching --feed" if feeds else (f" at level {level}" if level else "")
+        hint = " (add one with `menoa yara add`)" if missing == "YARA" and not yara_utils.list_feeds() else ""
+        err_console.print(f"[yellow]No {missing} feeds{reason}, scanning with {running} only{hint}[/yellow]")
+    if not picked:
+        names = " or ".join(ENGINE_NAMES[e] for e in engines)
+        hint = ", add one with `menoa yara add`" if engines == ("yara",) and not yara_utils.list_feeds() else ""
+        err_console.print(f"[red]No {names} feeds to scan with" + (f" at level {level}" if level else "") + f"{hint}[/red]")
+        sys.exit(2)
+    return picked
+
+def scan(path, quiet=False, engines=("clam",), feeds=(), level=None):
     """
     Scans path with ClamAV, YARA, or both at once, then exits like clamscan: 0 clean, 1 malware found, 2 scan failed
+    feeds and level pick the feeds to scan with (see utils.select_feeds), all of them without either
     """
     import threading
     import menoa.utils.clam_utils as clam_utils
     import menoa.utils.yara_utils as yara_utils
+
+    picked = pick_feeds(engines, feeds, level)
+    engines = tuple(picked)
 
     # Still scans with old signatures, they catch less but more than nothing. A missing database fails the scan below
     if "clam" in engines:
@@ -108,10 +142,8 @@ def scan(path, quiet=False, engines=("clam",)):
     totals = {engine: counters[engine](path) for engine in engines}
     print(", ".join(f"{ENGINE_NAMES[e]} {totals[e]}" for e in engines) if both else totals[engines[0]])
 
-    if "clam" in engines:
-        console.print(f"[yellow]Signatures: {', '.join(clam_utils.list_feeds())}[/yellow]")
-    if "yara" in engines:
-        console.print(f"[yellow]YARA rules: {', '.join(yara_utils.list_feeds()) or 'none'}[/yellow]")
+    for engine in engines:
+        console.print(f"[yellow]{ENGINE_NAMES[engine]} feeds: {', '.join(picked[engine]) or 'none'}[/yellow]")
 
     results = {}
 
@@ -136,7 +168,7 @@ def scan(path, quiet=False, engines=("clam",)):
             stage_bar.refresh()
 
         try:
-            for file, result in stream(path, on_progress, result_list["summary"].update):
+            for file, result in stream(path, on_progress, result_list["summary"].update, picked[engine] if feeds else None, level):
                 kind = clam_utils.result_kind(file, result)
                 if kind == "infected":
                     result_list["infected"].append(f"{file} {result}")
@@ -200,38 +232,41 @@ def scan(path, quiet=False, engines=("clam",)):
 
 @clam.command(name="quick")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
-def clam_quick_scan(quiet):
+@feed_options
+def clam_quick_scan(quiet, feeds, level):
     """
     Scans places in which malware is most often found (~/Downloads)
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting quick scan[/blue]")
-    scan(str(Path.home()) + "/Downloads/", quiet)
+    scan(str(Path.home()) + "/Downloads/", quiet, feeds=feeds, level=level)
 
 @clam.command(name="full")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
-def clam_full_scan(quiet):
+@feed_options
+def clam_full_scan(quiet, feeds, level):
     """
     Scans the whole system from /
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print("[blue]Starting full system scan from /[/blue]")
-    scan("/", quiet)
+    scan("/", quiet, feeds=feeds, level=level)
 
 
 @clam.command(name="scan")
 @click.argument('path', type=str)
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
-def clam_custom_scan(path, quiet):
+@feed_options
+def clam_custom_scan(path, quiet, feeds, level):
     """
     Perform a custom Clam scan using a given file/dir path
     """
     import menoa.utils.clam_utils as clam_utils
 
     console.print(f"[blue]Starting scan from: {path}[/blue]")
-    scan(path, quiet)
+    scan(path, quiet, feeds=feeds, level=level)
 
 @clam.command(name="status")
 def clam_status():
@@ -277,13 +312,14 @@ def clam_reload_feed(feed=False):
 @click.option('--description', type=str, required=True)
 @click.option('--local-path', type=str, required=True)
 @click.option('--centralize', is_flag=True, default=False)
-def clam_add_feed(index, name, url, description, local_path, centralize):
+@click.option('--level', type=click.Choice(FEED_LEVELS), default=None, help="Which scan levels use it (quick: all of them, the default; standard; deep: only deep scans)")
+def clam_add_feed(index, name, url, description, local_path, centralize, level):
     """
     Add a new Clam feed.
     """
     import menoa.utils.clam_utils as clam_utils
 
-    clam_utils.add_feed(index, name, url, description, local_path, centralize)
+    clam_utils.add_feed(index, name, url, description, local_path, centralize, level)
     console.print(f"[green]Added {name}![/green]")
 
 @clam.command(name="remove")
@@ -313,11 +349,12 @@ def clam_list_feeds():
     table.add_column("Upstream URL", style="magenta")
     table.add_column("Local Storage", style="magenta")
     table.add_column("Last Refreshed", style="magenta")
+    table.add_column("Level", style="magenta")
 
     feeds = clam_utils.list_feeds()
 
     for i in feeds:
-        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]))
+        table.add_row(i, feeds[i]["name"], feeds[i]["description"], feeds[i]["url"], feeds[i]["local_path"], str(feeds[i]["last_refreshed"]), feeds[i].get("level", "quick"))
 
     console.print(table)
 
@@ -365,21 +402,17 @@ def clam_toggle_background(on, off):
 @click.option('--quick', is_flag=True, help="Scan ~/Downloads, where malware is most often found")
 @click.option('--full', is_flag=True, help="Scan the whole system from /")
 @click.option('--quiet', '-q', is_flag=True, help="Don't warn about outdated malware signatures")
-def scan_command(path, quick, full, quiet):
+@feed_options
+def scan_command(path, quick, full, quiet, feeds, level):
     """
-    Scans a path with ClamAV and YARA rules at once (ClamAV only while there are no YARA feeds). Exits 0 if clean, 1 if malware is found, 2 if a scan failed
+    Scans a path with ClamAV and YARA rules at once (one engine alone if the other has no feeds to use). Exits 0 if clean, 1 if malware is found, 2 if a scan failed
     """
     if [bool(path), quick, full].count(True) != 1:
         raise click.UsageError("Pass a path, --quick or --full")
 
-    import menoa.utils.yara_utils as yara_utils
-
     target = path or (str(Path.home()) + "/Downloads/" if quick else "/")
-    engines = ("clam", "yara") if yara_utils.list_feeds() else ("clam",)
-    if len(engines) == 1:
-        err_console.print("[yellow]No YARA feeds, scanning with ClamAV only (add one with `menoa yara add`)[/yellow]")
     console.print(f"[blue]Starting scan from: {target}[/blue]")
-    scan(target, quiet, engines)
+    scan(target, quiet, ("clam", "yara"), feeds, level)
 
 
 @cli.group()
@@ -389,28 +422,31 @@ def yara():
 
 @yara.command(name="scan")
 @click.argument('path', type=str)
-def yara_custom_scan(path):
+@feed_options
+def yara_custom_scan(path, feeds, level):
     """
     Scans a file/dir path with the YARA feeds
     """
     console.print(f"[blue]Starting YARA scan from: {path}[/blue]")
-    scan(path, engines=("yara",))
+    scan(path, engines=("yara",), feeds=feeds, level=level)
 
 @yara.command(name="quick")
-def yara_quick_scan():
+@feed_options
+def yara_quick_scan(feeds, level):
     """
     Scans places in which malware is most often found (~/Downloads) with the YARA feeds
     """
     console.print("[blue]Starting quick YARA scan[/blue]")
-    scan(str(Path.home()) + "/Downloads/", engines=("yara",))
+    scan(str(Path.home()) + "/Downloads/", engines=("yara",), feeds=feeds, level=level)
 
 @yara.command(name="full")
-def yara_full_scan():
+@feed_options
+def yara_full_scan(feeds, level):
     """
     Scans the whole system from / with the YARA feeds
     """
     console.print("[blue]Starting full system YARA scan from /[/blue]")
-    scan("/", engines=("yara",))
+    scan("/", engines=("yara",), feeds=feeds, level=level)
 
 @yara.command(name="reload")
 @click.argument('feed', type=str, required=False)
@@ -440,13 +476,14 @@ def yara_reload_feed(feed=None):
 @click.option('--description', type=str, required=True)
 @click.option('--url', type=str, default="", help="Where to download the rule file from")
 @click.option('--local-path', type=str, default=None, help="Where the rule file is kept, a file of your own if there's no --url (default ~/.menoa/feeds/yara/<index>.yar)")
-def yara_add_feed(index, name, description, url, local_path):
+@click.option('--level', type=click.Choice(FEED_LEVELS), default=None, help="Which scan levels use it (quick: all of them, the default; standard; deep: only deep scans)")
+def yara_add_feed(index, name, description, url, local_path, level):
     """
     Add a YARA rule feed
     """
     import menoa.utils.yara_utils as yara_utils
 
-    yara_utils.add_feed(index, name, url, description, local_path)
+    yara_utils.add_feed(index, name, url, description, local_path, level)
     console.print(f"[green]Added {name}![/green]" + (f" Run `menoa yara reload {index}` to download it" if url else ""))
 
 @yara.command(name="remove")
@@ -468,11 +505,11 @@ def yara_list_feeds():
     import menoa.utils.yara_utils as yara_utils
 
     table = Table(title="YARA Rule Feeds", box=box.ROUNDED)
-    for column in ("Index", "Name", "Description", "Upstream URL", "Local Storage", "Last Refreshed"):
+    for column in ("Index", "Name", "Description", "Upstream URL", "Local Storage", "Last Refreshed", "Level"):
         table.add_column(column, justify="right" if column == "Index" else "left", style="cyan" if column == "Index" else "magenta", no_wrap=column == "Index")
 
     for index, feed in yara_utils.list_feeds().items():
-        table.add_row(index, feed["name"], feed["description"], feed["url"], feed["local_path"], str(feed["last_refreshed"]))
+        table.add_row(index, feed["name"], feed["description"], feed["url"], feed["local_path"], str(feed["last_refreshed"]), feed.get("level", "quick"))
 
     console.print(table)
 

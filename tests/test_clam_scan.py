@@ -300,7 +300,7 @@ def test_yara_tool():
     folder = make_yara_folder()
     fake(CLEAN, 0)
     result = CliRunner().invoke(cli, ["yara", "scan", str(folder)])
-    assert result.exit_code == 2 and "No YARA rules" in result.output, result.output
+    assert result.exit_code == 2 and "No YARA feeds to scan with, add one" in result.output, result.output
     result = CliRunner().invoke(cli, ["scan", "-q", str(folder)])
     assert result.exit_code == 0 and "ClamAV only" in result.stderr, result.output
 
@@ -372,6 +372,71 @@ def test_gui_scans_with_both_engines():
     assert page.circular._values == {"clam": None, "yara": 1000} and page.status1.text() == "Completed: 3 threat(s) found"
 
     from menoa.utils import yara_utils
+    for index in list(yara_utils.list_feeds()):
+        yara_utils.remove_feed(index)
+
+
+def test_feed_selection():
+    from PySide6.QtWidgets import QApplication
+    from menoa.utils import yara_utils
+    from menoa.utils.utils import select_feeds
+    from menoa.pages.clam_page import ClamPage
+    app = QApplication.instance() or QApplication([])
+
+    # Levels nest, a feed without one is quick
+    configured = {"q": {"local_path": "/q"}, "s": {"local_path": "/s", "level": "standard"}, "d": {"local_path": "/d", "level": "deep"}}
+    assert list(select_feeds(configured, level="quick")) == ["q"]
+    assert list(select_feeds(configured, level="standard")) == ["q", "s"]
+    assert list(select_feeds(configured, level="deep")) == list(select_feeds(configured)) == ["q", "s", "d"]
+    try:
+        select_feeds(configured, ["nope"])
+        assert False, "an unknown feed should have raised"
+    except Exception as e:
+        assert "Unknown feed nope" in str(e), e
+
+    (CLAM_DIR / "extra.hdb").write_text("44d88612fea8a8f36de82e1278abb02f:68:Menoa-Test\n")
+    clam_utils.add_feed("extra", "Extra", "", "test", str(CLAM_DIR / "extra.hdb"), move_into_default_feed_path=False, level="deep")
+    rules = make_yara_feeds()
+    folder = make_yara_folder()
+    fake(CLEAN, 0)
+    databases = lambda: [line for line in ARGS_FILE.read_text().splitlines() if line.startswith("/") and line != str(folder)]
+
+    # --feed: only those feeds, defaults included only if named, and the header says which are used
+    result = CliRunner().invoke(cli, ["clam", "scan", "-q", str(folder), "--feed", "extra"])
+    assert result.exit_code == 0 and "ClamAV feeds: extra" in result.output and databases() == [str(CLAM_DIR / "extra.hdb")], (result.output, databases())
+    result = CliRunner().invoke(cli, ["clam", "scan", "-q", str(folder), "--level", "standard"])
+    assert result.exit_code == 0 and str(CLAM_DIR / "extra.hdb") not in databases() and len(databases()) == 3, databases()
+    result = CliRunner().invoke(cli, ["clam", "scan", "-q", str(folder), "--feed", "nope"])
+    assert result.exit_code == 2 and "Unknown feed nope" in result.output, result.output
+
+    # A YARA rule file that isn't in the config, and in a scan with both engines a YARA feed alone leaves ClamAV out
+    result = CliRunner().invoke(cli, ["yara", "scan", str(folder), "--feed", str(rules / "two.yara")])
+    assert result.exit_code == 1 and f"YARA feeds: {rules / 'two.yara'}" in result.output and "marked.txt" not in result.output, result.output
+    result = CliRunner().invoke(cli, ["scan", "-q", str(folder), "--feed", "one"])
+    assert result.exit_code == 1 and "scanning with YARA only" in result.stderr and "ClamAV: Scanned" not in result.output, result.output
+
+    # GUI: the picker's choice is shown, logged and used
+    page = ClamPage()
+    assert page.feeds_used.text() == "ClamAV: default_daily, default_main, default_bytecode, extra\nYARA: one, two", page.feeds_used.text()
+    page.feed_choice.setCurrentIndex(1)  # Quick level feeds
+    page._feed_choice_changed(1)
+    assert "extra" not in page.feeds_used.text()
+    page.feed_choice.setCurrentIndex(4)  # Choose feeds... with only "two" ticked
+    page._last_choice, page._chosen_feeds = 4, ["two"]
+    page._show_feeds_used()
+    assert page.feeds_used.text() == "YARA: two", page.feeds_used.text()
+    page._start_scan(str(folder))
+    end = time.time() + 30
+    while time.time() < end and page._running:
+        app.processEvents()
+        time.sleep(0.01)
+    log = page.log_box.toPlainText()
+    assert "scanning with YARA only" in log and "YARA feeds: two" in log and "YARA.Marker FOUND" in log and "marked.txt" not in log, log
+    page._chosen_feeds = []
+    page._start_scan(str(folder))
+    assert "SCAN NOT STARTED: no ClamAV or YARA feeds selected" in page.log_box.toPlainText()
+
+    clam_utils.remove_feed("extra")
     for index in list(yara_utils.list_feeds()):
         yara_utils.remove_feed(index)
 
@@ -541,6 +606,7 @@ if __name__ == "__main__":
     test_custom_feeds_used()
     test_yara_tool()
     test_gui_scans_with_both_engines()
+    test_feed_selection()
     test_good_scan_classification()
     test_failed_scans_raise()
     test_cli_exit_codes()

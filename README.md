@@ -12,6 +12,7 @@ It is made up of six main tools,
     - Provides a CLI and GUI frontend for ClamAV, the most popular open source antivirus*
 - YARA Rule Scanning
     - Scans files with YARA rules using [YARA-X](https://virustotal.github.io/yara-x/), which supports the whole YARA language (ClamAV's own YARA support skips modules like `elf` and `pe`). Runs on its own (`menoa yara scan`) or together with ClamAV (`menoa scan`, and the main buttons on the GUI's Malware Scanning page). Add rule feeds with `menoa yara add --index myrules --name "My rules" --description "..." --url https://example.org/rules.yar`, or `--local-path` for a rule file of your own
+    - Every scan uses all configured ClamAV and YARA feeds unless you pick some: `--feed <index or file>` (repeatable) scans with only those, `--level quick|standard|deep` with the feeds up to that level. Give a feed a level with `--level` when adding it (`menoa clam add`/`menoa yara add`), a feed without one is quick and in every level. The GUI's "Scan with" picker does the same, and both list the feeds a scan uses
 - Network Connection Endpoint scanning
     - Compares outgoing IP address connections against lists of known malicious endpoints*
 - Machine Learning Driven Process Classification (beta)
@@ -108,7 +109,7 @@ Menoa is made specifically for Linux, and it follows the very important principl
 - [x] When clamav scanning is running, the progress % text line should be in the middle of the circle
 - [ ] Right now ClamAV just uses the official source but you can load your own yara rules, we could make our own threat feed for yara rules combining other sources
 - [ ] Add ability to run attestation after /bin and associated dirs are changed (after a package update)
-- [ ] Add ability to scan with clam using a specified feed (cli and gui)
+- [x] Add ability to scan with clam using a specified feed (cli and gui)
 - [ ] Should you be able to determine how often a feed should update in the config?
 - [ ] In GUI be able to stop a scan mid scan without having to close the window
 - [x] Any malware that tampers with a binary could also change its hash value in the database (the local database that marks a binary as attested), add a method of signing the hashes received from the api with a key from Menoa

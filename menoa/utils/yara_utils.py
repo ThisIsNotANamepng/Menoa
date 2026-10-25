@@ -61,7 +61,7 @@ def toggle(status=None):
 def list_feeds():
     return _load()["yara_feeds"]
 
-def add_feed(index, name, url, description, local_path=None):
+def add_feed(index, name, url, description, local_path=None, level=None):
     """
     Adds a YARA rule feed. Without a url, local_path is a rule file of your own that's used as it is
     """
@@ -79,6 +79,8 @@ def add_feed(index, name, url, description, local_path=None):
         "local_path": os.path.abspath(os.path.expanduser(local_path or f"{FEED_DIR}/{index}.yar")),
         "last_refreshed": datetime(1970, 1, 1),
     }
+    if level:  # Without one it's quick, in every scan level (utils.select_feeds)
+        config["yara_feeds"][index]["level"] = level
     _save(config)
 
 def remove_feed(index):
@@ -152,11 +154,12 @@ def _records(stream):
             yield os.fsdecode(file), result.decode()
         fields = fields[paired:]
 
-def scan_path_streaming(path, on_progress=None, on_summary=None):
+def scan_path_streaming(path, on_progress=None, on_summary=None, feeds=None, level=None):
     """
     Generator that scans path with every downloaded YARA feed, like clam_utils.scan_path_streaming()
     Yields (file, result) for every file ("OK", "YARA.<rule> FOUND", or why it was skipped or couldn't be read), (None, message) for problems with the scan
     on_progress(stage, 0, 0) is called while the rules compile, on_summary({"Scanned files", "YARA rules", "Time"}) at the end
+    feeds and level pick which feeds to scan with, see utils.select_feeds(), every configured feed without them
 
     Raises an Exception if nothing could actually be checked (no rules, the scan crashed), so a failed scan is never mistaken for a clean one
     """
@@ -165,14 +168,16 @@ def scan_path_streaming(path, on_progress=None, on_summary=None):
         raise Exception(f"Path not found: {path}")
 
     rule_files = []
-    for index, feed in list_feeds().items():
+    for index, feed in utils.select_feeds(list_feeds(), feeds, level).items():
         feed_path = os.path.expanduser(feed["local_path"])
         if os.path.exists(feed_path):
             rule_files.append(feed_path)
+        elif feeds:
+            raise Exception(f"YARA feed {index} isn't downloaded, run `menoa yara reload {index}`")
         else:
             yield (None, f"YARA feed {index} skipped, {feed_path} doesn't exist (run `menoa yara reload {index}`)")
     if not rule_files:
-        raise Exception("No YARA rules to scan with, add a feed with `menoa yara add` and run `menoa yara reload`")
+        raise Exception("No YARA rules to scan with" + (f" at level {level}" if level else "") + ", add a feed with `menoa yara add` and run `menoa yara reload`")
 
     if on_progress:
         on_progress("Compiling YARA rules", 0, 0)
