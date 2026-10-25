@@ -1,33 +1,8 @@
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QDialog, QLineEdit, QDialogButtonBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QGroupBox, QInputDialog
 from PySide6.QtCore import QTimer, Qt
 
 from menoa.utils.script_utils import parse_script, predict_actions, load_remote_script
-
-class TemplateDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Menoa - Bash Parsing")
-        self.resize(300, 100)
-
-        # Create input field
-        self.input_field = QLineEdit()
-        self.input_field.setPlaceholderText("Enter template name...")
-
-        # Create buttons
-        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-
-        # Layout setup
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("Template Name:"))
-        layout.addWidget(self.input_field)
-        layout.addWidget(self.button_box)
-
-        self.setLayout(layout)
-
-    def get_template_name(self):
-        return self.input_field.text()
+from menoa.pages.progress_dialog import run_with_progress
 
 class ScriptPage(QWidget):
     def __init__(self):
@@ -48,12 +23,12 @@ class ScriptPage(QWidget):
         self.controls_group = QGroupBox("Controls")
         self.analyze_button = QPushButton("Analyze Now")
         self.analyze_button.clicked.connect(self.run_analysis)
-        self.load_template_button = QPushButton("Remote URL")
-        self.load_template_button.clicked.connect(self.show_template_dialog)
+        self.load_url_button = QPushButton("Load from URL")
+        self.load_url_button.clicked.connect(self.show_url_dialog)
 
         controls_layout = QHBoxLayout()
         controls_layout.addWidget(self.analyze_button)
-        controls_layout.addWidget(self.load_template_button)
+        controls_layout.addWidget(self.load_url_button)
         self.controls_group.setLayout(controls_layout)
 
         # --- Prediction Output Box ---
@@ -86,17 +61,28 @@ class ScriptPage(QWidget):
         # Debounce analysis to avoid running on every keystroke
         self.analysis_timer.start(500)  # wait 500ms after last change
 
-    def show_template_dialog(self):
-        """Show template loading dialog with text input"""
-        dialog = TemplateDialog(self)
-        if dialog.exec() == QDialog.Accepted:
-            template_name = dialog.get_template_name()
-            self.load_template(template_name)
+    def show_url_dialog(self):
+        # For checking an install.sh before running it
+        url, ok = QInputDialog.getText(self, "Menoa - Load Script", "Script URL (like https://example.com/install.sh):")
+        if ok and url.strip():
+            self.load_url(url.strip())
 
-    def load_template(self, template_name):
-        """Load template using user-provided name"""
-        template = load_remote_script(template_name)
-        self.script_input.setPlainText(template)
+    def load_url(self, url):
+        """
+        Downloads the script at url off the GUI thread, then analyzes it. A failed download leaves the script box as it was
+        """
+        script = []
+        def download(progress):
+            script.append(load_remote_script(url))
+            return []  # No failures, a failed download raises
+        failures = run_with_progress(download, f"Downloading {url}...")
+        if failures:
+            self.output_view.setPlainText(f"Couldn't download {url}: {failures[0]}")
+            return
+        self.script_input.setPlainText(script[0])
+        self.analysis_timer.stop()  # Analyzed now instead of after the typing delay, with where it came from on top
+        self.run_analysis()
+        self.output_view.setPlainText(f"Script from {url}\n\n{self.output_view.toPlainText()}")
 
     def run_analysis(self):
         script_text = self.script_input.toPlainText()
