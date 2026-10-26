@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="menoa",
-    version="0.6.0",
+    version="0.7.0",
     author="Jack Hagen",
     author_email="jack@example.com",
     description="Menoa Linux Security Suite",

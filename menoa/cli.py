@@ -71,7 +71,7 @@ console = Console()
 err_console = Console(stderr=True)  # Warnings, so they stay out of piped output
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(version="0.6.0", prog_name="Menoa")
+@click.version_option(version="0.7.0", prog_name="Menoa")
 def cli() -> None:
     """
     The CLI frontend for Menoa. See menoa.org/docs more information 
