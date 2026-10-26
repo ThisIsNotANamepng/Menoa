@@ -11,7 +11,7 @@ setup(
     description="Menoa Linux Security Suite",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/JackHagen/menoa",
+    url="https://menoa.org",
     license="MIT",
     python_requires=">=3.11",
     packages=find_packages(include=["menoa", "menoa.*"]),
@@ -89,6 +89,6 @@ setup(
         "Topic :: Security",
     ],
     project_urls={
-        "Source": "https://github.com/JackHagen/menoa",
+        "Source": "https://github.com/ThisIsNotANamepng/Menoa",
     },
 )
